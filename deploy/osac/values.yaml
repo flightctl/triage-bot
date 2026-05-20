@@ -1,0 +1,14 @@
+# See all ../shared-values.yaml
+# If you want to customize something from that file, please move it here
+# don't change it there.
+config:
+  dry_run: false
+
+  jira:
+    username: "osac-automation@redhat.com"
+    project_keys:
+      - OSAC
+
+  ai:
+    claude:
+      vertex_project_id: "itpc-gcp-eco-eng-claude"

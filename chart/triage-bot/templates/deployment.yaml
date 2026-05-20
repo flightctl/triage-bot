@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "triage-bot.fullname" . }}
+  labels:
+    {{- include "triage-bot.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "triage-bot.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "triage-bot.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "triage-bot.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -config
+            - /app/config/config.yaml
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: TRIAGE_BOT_JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "triage-bot.jiraSecretName" . }}
+                  key: jira-api-token
+            {{- if and (eq .Values.config.ai.provider "claude") .Values.config.ai.claude.vertex_project_id }}
+            - name: CLAUDE_CODE_USE_VERTEX
+              value: "1"
+            - name: CLOUD_ML_PROJECT_ID
+              value: {{ .Values.config.ai.claude.vertex_project_id | quote }}
+            - name: CLOUD_ML_REGION
+              value: {{ .Values.config.ai.claude.vertex_region | quote }}
+            {{- if or .Values.secrets.vertexSaKey .Values.secrets.existingVertexSecret }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /run/secrets/vertex/gcp-sa-key.json
+            {{- end }}
+            {{- else if eq .Values.config.ai.provider "claude" }}
+            - name: TRIAGE_BOT_AI_CLAUDE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "triage-bot.jiraSecretName" . }}
+                  key: claude-api-key
+                  optional: true
+            {{- end }}
+            - name: TRIAGE_BOT_SERVER_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "triage-bot.jiraSecretName" . }}
+                  key: webhook-secret
+                  optional: true
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            {{- if or .Values.secrets.vertexSaKey .Values.secrets.existingVertexSecret }}
+            - name: vertex-sa
+              mountPath: /run/secrets/vertex
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "triage-bot.fullname" . }}-config
+        {{- if or .Values.secrets.vertexSaKey .Values.secrets.existingVertexSecret }}
+        - name: vertex-sa
+          secret:
+            secretName: {{ include "triage-bot.vertexSecretName" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

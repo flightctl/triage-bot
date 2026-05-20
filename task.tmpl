@@ -1,0 +1,39 @@
+Read the triage assess skill instructions at {{.WorkflowPath}}/skills/assess.md
+and follow them to assess the Jira bug {{.IssueURL}}.
+
+## MCP Server
+
+A Jira MCP server is configured under the name "jira". Use its tools for
+all Jira read operations (searching issues, fetching details). The skill
+instructions may reference different tool names — use whichever Jira tools
+are available from the configured MCP server.
+
+## Output
+
+After completing the assessment, write two output files:
+
+1. **{{.OutputPath}}** — the full triage assessment as an Atlassian Document
+   Format (ADF) JSON object. The top-level structure must be:
+   ```json
+   {
+     "type": "doc",
+     "version": 1,
+     "content": [ ... ]
+   }
+   ```
+   Use proper ADF node types: heading, paragraph, table, bulletList,
+   orderedList, codeBlock, rule, etc. Use marks for bold, italic, code,
+   and links. Do not include the "On Completion" section.
+   Write ONLY the raw JSON — no markdown fences, no extra text.
+
+2. **{{.MetadataPath}}** — a JSON metadata file with this structure:
+   ```json
+   {
+     "recommendation": "<type>",
+     "confidence": "<High|Medium|Low>",
+     "autoFixLikelihood": <0-100 or null>
+   }
+   ```
+   Where `<type>` is one of: CLOSE, FIX_NOW, AUTO_FIX, BACKLOG,
+   NEEDS_INFO, DUPLICATE, ESCALATE, WONT_FIX.
+   Set autoFixLikelihood only when recommendation is AUTO_FIX; otherwise set it to null.

@@ -1,0 +1,3 @@
+# Triage Bot
+
+@AGENTS.md

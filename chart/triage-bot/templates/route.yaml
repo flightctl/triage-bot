@@ -1,0 +1,26 @@
+{{- if and .Values.route.enabled .Values.secrets.webhookSecret -}}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "triage-bot.fullname" . }}
+  labels:
+    {{- include "triage-bot.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host }}
+  {{- end }}
+  path: /webhook
+  to:
+    kind: Service
+    name: {{ include "triage-bot.fullname" . }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}

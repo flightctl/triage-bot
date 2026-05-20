@@ -1,0 +1,52 @@
+image:
+  repository: quay.io/rh-ee-andalton/triage-bot
+  pullPolicy: Always
+  tag: latest
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# Use pre-created secrets (per-consumer namespace)
+secrets:
+  create: false
+  existingJiraSecret: "triage-bot-jira-token"
+  existingVertexSecret: "triage-bot-vertex"
+
+config:
+  logging:
+    level: info
+    format: json
+
+  jira:
+    base_url: "https://redhat.atlassian.net"
+    site_name: "redhat"
+    interval_seconds: 300
+    max_results: 100
+
+  ai:
+    provider: claude
+    model: "claude-sonnet-4-6"
+    max_concurrent: 3
+    timeout_minutes: 15
+    claude:
+      vertex_region: "global"
+
+  triage:
+    workflow_path: /opt/workflows/triage
+    auto_fix_label: "ai-autofix-candidate"
+    auto_fix_threshold: 60
+    import:
+      repo: "https://github.com/flightctl/ai-workflows.git"
+      path: "triage"
+      ref: "main"
+
+  mcp:
+    jira:
+      command: "npx"
+      args: ["-y", "@aashari/mcp-server-atlassian-jira"]
+      env: {}

@@ -1,0 +1,13 @@
+# Binary
+/triage-bot
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/
