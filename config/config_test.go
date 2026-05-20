@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -143,6 +144,104 @@ ai:
 
 	if cfg.UseVertexAI() {
 		t.Error("UseVertexAI() = true, want false")
+	}
+}
+
+func TestLoadConfig_EnvVarOverride(t *testing.T) {
+	content := `
+jira:
+  base_url: "https://file.example.com"
+  username: "file-user"
+  api_token: "file-token"
+  project_keys:
+    - PROJ
+ai:
+  provider: claude
+  claude:
+    api_key: "file-key"
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TRIAGE_BOT_JIRA_BASE_URL", "https://env.example.com")
+	t.Setenv("TRIAGE_BOT_JIRA_USERNAME", "env-user")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Jira.BaseURL != "https://env.example.com" {
+		t.Errorf("base_url = %q, want env override", cfg.Jira.BaseURL)
+	}
+	if cfg.Jira.Username != "env-user" {
+		t.Errorf("username = %q, want env override", cfg.Jira.Username)
+	}
+	if cfg.Jira.APIToken != "file-token" {
+		t.Errorf("api_token = %q, want file value (no env override)", cfg.Jira.APIToken)
+	}
+}
+
+func TestLoadConfig_NestedEnvVar(t *testing.T) {
+	content := `
+jira:
+  base_url: "https://example.com"
+  username: "user"
+  api_token: "token"
+  project_keys:
+    - PROJ
+ai:
+  provider: claude
+  claude:
+    api_key: "key"
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TRIAGE_BOT_AI_CLAUDE_VERTEX_PROJECT_ID", "my-gcp-project")
+	t.Setenv("TRIAGE_BOT_AI_CLAUDE_VERTEX_REGION", "us-east5")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AI.Claude.VertexProjectID != "my-gcp-project" {
+		t.Errorf("vertex_project_id = %q, want %q", cfg.AI.Claude.VertexProjectID, "my-gcp-project")
+	}
+	if cfg.AI.Claude.VertexRegion != "us-east5" {
+		t.Errorf("vertex_region = %q, want %q", cfg.AI.Claude.VertexRegion, "us-east5")
+	}
+}
+
+func TestLoadConfig_InvalidProjectKey(t *testing.T) {
+	content := `
+jira:
+  base_url: "https://example.com"
+  username: "user"
+  api_token: "token"
+  project_keys:
+    - "invalid-key"
+ai:
+  provider: claude
+  claude:
+    api_key: "key"
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for invalid project key")
+	}
+	if !strings.Contains(err.Error(), "not a valid Jira project key") {
+		t.Errorf("error = %q, want project key validation error", err.Error())
 	}
 }
 

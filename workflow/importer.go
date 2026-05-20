@@ -54,7 +54,7 @@ func (i *Importer) Import() error {
 }
 
 func (i *Importer) cloneFull(ref string) error {
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", ref, i.cfg.Repo, i.cfg.Dest)
+	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", ref, "--", i.cfg.Repo, i.cfg.Dest)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -65,10 +65,11 @@ func (i *Importer) cloneFull(ref string) error {
 
 func (i *Importer) cloneSparse(ref string) error {
 	tmpDir := i.cfg.Dest + ".tmp"
+	os.RemoveAll(tmpDir)
 	defer os.RemoveAll(tmpDir)
 
 	clone := exec.Command("git", "clone", "--depth", "1", "--branch", ref,
-		"--filter=blob:none", "--sparse", i.cfg.Repo, tmpDir)
+		"--filter=blob:none", "--sparse", "--", i.cfg.Repo, tmpDir)
 	clone.Stdout = os.Stdout
 	clone.Stderr = os.Stderr
 	if err := clone.Run(); err != nil {

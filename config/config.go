@@ -172,14 +172,14 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	if err := config.validate(); err != nil {
+	if err := config.normalizeAndValidate(); err != nil {
 		return nil, err
 	}
 
 	return &config, nil
 }
 
-func (c *Config) validate() error {
+func (c *Config) normalizeAndValidate() error {
 	c.Jira.BaseURL = strings.TrimRight(c.Jira.BaseURL, "/")
 	c.Jira.APIToken = strings.TrimSpace(c.Jira.APIToken)
 	c.Jira.Username = strings.TrimSpace(c.Jira.Username)

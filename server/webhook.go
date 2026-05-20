@@ -1,15 +1,16 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -26,19 +27,30 @@ type IssueProcessor interface {
 type WebhookHandler struct {
 	processor IssueProcessor
 	inFlight  *scanner.InFlight
+	ctx       context.Context
 	secret    string
 	sem       chan struct{}
+	wg        sync.WaitGroup
 	logger    *zap.Logger
 }
 
-func NewWebhookHandler(processor IssueProcessor, inFlight *scanner.InFlight, secret string, maxConcurrent int, logger *zap.Logger) *WebhookHandler {
+func NewWebhookHandler(processor IssueProcessor, inFlight *scanner.InFlight, ctx context.Context, secret string, maxConcurrent int, logger *zap.Logger) (*WebhookHandler, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("webhook secret must not be empty")
+	}
 	return &WebhookHandler{
 		processor: processor,
 		inFlight:  inFlight,
+		ctx:       ctx,
 		secret:    secret,
 		sem:       make(chan struct{}, maxConcurrent),
 		logger:    logger,
-	}
+	}, nil
+}
+
+// Wait blocks until all in-flight webhook goroutines complete.
+func (h *WebhookHandler) Wait() {
+	h.wg.Wait()
 }
 
 // jiraWebhookPayload is the relevant subset of a Jira webhook POST body.
@@ -53,19 +65,17 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		h.logger.Error("Failed to read webhook body", zap.Error(err))
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	if h.secret != "" {
-		if !h.verifySignature(r.Header.Get("X-Hub-Signature"), body) {
-			h.logger.Warn("Webhook signature verification failed")
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	if !h.verifySignature(r.Header.Get("X-Hub-Signature"), body) {
+		h.logger.Warn("Webhook signature verification failed")
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 
 	var payload jiraWebhookPayload
@@ -94,10 +104,12 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case h.sem <- struct{}{}:
+		h.wg.Add(1)
 		go func() {
+			defer h.wg.Done()
 			defer func() { <-h.sem }()
 			defer h.inFlight.Release(payload.Issue.Key)
-			if err := h.processor.Process(context.Background(), payload.Issue); err != nil {
+			if err := h.processor.Process(h.ctx, payload.Issue); err != nil {
 				h.logger.Error("Webhook-triggered processing failed",
 					zap.String("issue", payload.Issue.Key),
 					zap.Error(err))

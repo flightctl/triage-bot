@@ -59,20 +59,27 @@ func main() {
 
 	processor := triage.NewProcessor(jiraClient, executor, *cfg, logger)
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	inFlight := scanner.NewInFlight()
 	s := scanner.NewScanner(jiraClient, processor, inFlight, *cfg, logger)
 
 	var webhookHandler *server.WebhookHandler
 	if cfg.Server.WebhookSecret != "" {
-		webhookHandler = server.NewWebhookHandler(processor, inFlight, cfg.Server.WebhookSecret, cfg.AI.MaxConcurrent, logger)
+		var err error
+		webhookHandler, err = server.NewWebhookHandler(processor, inFlight, ctx, cfg.Server.WebhookSecret, cfg.AI.MaxConcurrent, logger)
+		if err != nil {
+			logger.Fatal("Failed to create webhook handler", zap.Error(err))
+		}
 		logger.Info("Webhook endpoint enabled at /webhook")
 	} else {
 		logger.Info("Webhook endpoint disabled (no webhook_secret configured)")
 	}
 	srv := server.NewServer(cfg.Server.Port, webhookHandler, logger)
-	srv.Start()
+	if err := srv.Start(); err != nil {
+		logger.Fatal("Failed to start server", zap.Error(err))
+	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
 
 	stop := make(chan os.Signal, 1)
@@ -82,6 +89,9 @@ func main() {
 	logger.Info("Shutdown signal received")
 	cancel()
 	s.Stop()
+	if webhookHandler != nil {
+		webhookHandler.Wait()
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
@@ -157,7 +167,7 @@ func setupMCPConfig(cfg *config.Config, logger *zap.Logger) error {
 	}
 
 	settingsDir := filepath.Join(home, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+	if err := os.MkdirAll(settingsDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
@@ -167,7 +177,7 @@ func setupMCPConfig(cfg *config.Config, logger *zap.Logger) error {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
 
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write settings.json: %w", err)
 	}
 
