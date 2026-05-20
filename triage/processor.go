@@ -20,13 +20,13 @@ const (
 
 // JiraClient is the subset of the Jira client used by the processor.
 type JiraClient interface {
-	GetComments(key string) ([]jira.JiraComment, error)
-	AddComment(key, comment string) error
-	UpdateComment(key, commentID, body string) error
-	AddCommentADF(key string, adfBody map[string]any) error
-	UpdateCommentADF(key, commentID string, adfBody map[string]any) error
-	AddLabel(key, label string) error
-	RemoveLabel(key, label string) error
+	GetComments(ctx context.Context, key string) ([]jira.JiraComment, error)
+	AddComment(ctx context.Context, key, comment string) error
+	UpdateComment(ctx context.Context, key, commentID, body string) error
+	AddCommentADF(ctx context.Context, key string, adfBody map[string]any) error
+	UpdateCommentADF(ctx context.Context, key, commentID string, adfBody map[string]any) error
+	AddLabel(ctx context.Context, key, label string) error
+	RemoveLabel(ctx context.Context, key, label string) error
 }
 
 // Action describes what the processor decided to do for an issue.
@@ -76,7 +76,7 @@ func (p *Processor) Process(ctx context.Context, issue jira.JiraIssue) error {
 	description := string(issue.Fields.Description)
 	descHash := computeHash(description)
 
-	action, existingCommentID := p.determineAction(key, descHash)
+	action, existingCommentID := p.determineAction(ctx, key, descHash)
 
 	switch action {
 	case ActionSkip:
@@ -98,15 +98,15 @@ func (p *Processor) Process(ctx context.Context, issue jira.JiraIssue) error {
 		return fmt.Errorf("triage failed for %s: %w", key, err)
 	}
 
-	if err := p.postComment(key, action, existingCommentID, assessment, descHash); err != nil {
+	if err := p.postComment(ctx, key, action, existingCommentID, assessment, descHash); err != nil {
 		return err
 	}
 
-	p.syncLabel(key, issue.Fields.Labels, meta)
+	p.syncLabel(ctx, key, issue.Fields.Labels, meta)
 	return nil
 }
 
-func (p *Processor) postComment(key string, action Action, existingCommentID, assessment, descHash string) error {
+func (p *Processor) postComment(ctx context.Context, key string, action Action, existingCommentID, assessment, descHash string) error {
 	adfBody, adfErr := buildADFComment(assessment, descHash)
 	if adfErr != nil {
 		p.logger.Warn("Failed to parse ADF output, falling back to plain text",
@@ -132,11 +132,11 @@ func (p *Processor) postComment(key string, action Action, existingCommentID, as
 	switch action {
 	case ActionCreate:
 		if adfErr == nil {
-			if err := p.jira.AddCommentADF(key, adfBody); err != nil {
+			if err := p.jira.AddCommentADF(ctx, key, adfBody); err != nil {
 				return fmt.Errorf("failed to post comment on %s: %w", key, err)
 			}
 		} else {
-			if err := p.jira.AddComment(key, appendHashFooter(assessment, descHash)); err != nil {
+			if err := p.jira.AddComment(ctx, key, appendHashFooter(assessment, descHash)); err != nil {
 				return fmt.Errorf("failed to post comment on %s: %w", key, err)
 			}
 		}
@@ -144,11 +144,11 @@ func (p *Processor) postComment(key string, action Action, existingCommentID, as
 
 	case ActionUpdate:
 		if adfErr == nil {
-			if err := p.jira.UpdateCommentADF(key, existingCommentID, adfBody); err != nil {
+			if err := p.jira.UpdateCommentADF(ctx, key, existingCommentID, adfBody); err != nil {
 				return fmt.Errorf("failed to update comment on %s: %w", key, err)
 			}
 		} else {
-			if err := p.jira.UpdateComment(key, existingCommentID, appendHashFooter(assessment, descHash)); err != nil {
+			if err := p.jira.UpdateComment(ctx, key, existingCommentID, appendHashFooter(assessment, descHash)); err != nil {
 				return fmt.Errorf("failed to update comment on %s: %w", key, err)
 			}
 		}
@@ -158,8 +158,8 @@ func (p *Processor) postComment(key string, action Action, existingCommentID, as
 	return nil
 }
 
-func (p *Processor) determineAction(key, descHash string) (Action, string) {
-	comments, err := p.jira.GetComments(key)
+func (p *Processor) determineAction(ctx context.Context, key, descHash string) (Action, string) {
+	comments, err := p.jira.GetComments(ctx, key)
 	if err != nil {
 		p.logger.Warn("Failed to fetch comments, will create new comment",
 			zap.String("issue", key),
@@ -196,7 +196,7 @@ func (p *Processor) findBotComment(comments []jira.JiraComment) *jira.JiraCommen
 	return nil
 }
 
-func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata) {
+func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []string, meta *Metadata) {
 	label := p.cfg.Triage.AutoFixLabel
 	if label == "" {
 		return
@@ -221,7 +221,7 @@ func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata
 	hasLabel := containsLabel(currentLabels, label)
 
 	if shouldHaveLabel && !hasLabel {
-		if err := p.jira.AddLabel(key, label); err != nil {
+		if err := p.jira.AddLabel(ctx, key, label); err != nil {
 			p.logger.Warn("Failed to add auto-fix label",
 				zap.String("issue", key),
 				zap.Error(err))
@@ -236,7 +236,7 @@ func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata
 			zap.String("label", label),
 			zap.Int("likelihood", likelihood))
 	} else if !shouldHaveLabel && hasLabel {
-		if err := p.jira.RemoveLabel(key, label); err != nil {
+		if err := p.jira.RemoveLabel(ctx, key, label); err != nil {
 			p.logger.Warn("Failed to remove auto-fix label",
 				zap.String("issue", key),
 				zap.Error(err))

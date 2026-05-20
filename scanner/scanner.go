@@ -88,7 +88,7 @@ func (s *Scanner) scan(ctx context.Context) {
 	var allIssues []jira.JiraIssue
 	nextPageToken := ""
 	for {
-		result, err := s.jiraClient.SearchTickets(jql, s.cfg.Jira.MaxResults, nextPageToken)
+		result, err := s.jiraClient.SearchTickets(ctx, jql, s.cfg.Jira.MaxResults, nextPageToken)
 		if err != nil {
 			s.logger.Error("Failed to search Jira", zap.Error(err))
 			return

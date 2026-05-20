@@ -13,6 +13,10 @@ type JiraTime struct {
 }
 
 func (jt *JiraTime) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		jt.Time = time.Time{}
+		return nil
+	}
 	s := string(b)
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		s = s[1 : len(s)-1]
@@ -163,7 +167,8 @@ func isBlockNode(nodeType string) bool {
 	case "paragraph", "heading", "blockquote", "codeBlock",
 		"orderedList", "bulletList", "listItem", "rule",
 		"table", "tableRow", "tableCell", "tableHeader",
-		"mediaSingle", "panel":
+		"mediaSingle", "mediaGroup", "panel", "expand",
+		"extension", "decisionList", "taskList":
 		return true
 	}
 	return false
@@ -172,6 +177,7 @@ func isBlockNode(nodeType string) bool {
 // TextToADF converts plain text to a minimal Atlassian Document Format
 // object for Jira Cloud API v3 write operations.
 func TextToADF(text string) map[string]any {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 	paragraphs := strings.Split(text, "\n")
 	content := make([]map[string]any, 0, len(paragraphs))
 	for _, line := range paragraphs {

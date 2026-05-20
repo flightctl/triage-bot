@@ -2,6 +2,7 @@ package jira
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,47 +19,48 @@ import (
 )
 
 const (
-	maxRetries              = 2
+	maxAttempts             = 2
 	maxRetryWaitSeconds     = 60
 	initialBackoffSeconds   = 1
 	maxBackoffSeconds       = 16
 	maxJitterSeconds        = 1.0
-	maxBodyLogLength        = 500
 	maxBodyErrorLength      = 200
+)
+
+var (
+	validIssueKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
+	validCommentID = regexp.MustCompile(`^\d+$`)
 )
 
 type Client struct {
 	baseURL  string
-	username string
-	apiToken string
+	authHeader string
 	client   *http.Client
 	logger   *zap.Logger
 	sleepFn  func(time.Duration) <-chan time.Time
 }
 
 func NewClient(baseURL, username, apiToken string, logger *zap.Logger) *Client {
-	return &Client{
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		username: username,
-		apiToken: apiToken,
-		client:   &http.Client{},
-		logger:   logger,
-		sleepFn:  time.After,
-	}
+	return newClient(baseURL, username, apiToken, &http.Client{}, logger, time.After)
 }
 
 func NewClientForTest(baseURL, username, apiToken string, httpClient *http.Client, logger *zap.Logger, sleepFn func(time.Duration) <-chan time.Time) *Client {
+	return newClient(baseURL, username, apiToken, httpClient, logger, sleepFn)
+}
+
+func newClient(baseURL, username, apiToken string, httpClient *http.Client, logger *zap.Logger, sleepFn func(time.Duration) <-chan time.Time) *Client {
+	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+apiToken))
 	return &Client{
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		username: username,
-		apiToken: apiToken,
-		client:   httpClient,
-		logger:   logger,
-		sleepFn:  sleepFn,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		authHeader: auth,
+		client:     httpClient,
+		logger:     logger,
+		sleepFn:    sleepFn,
 	}
 }
 
-func (c *Client) doOperation(method, url string, bodyReader io.Reader, okStatusCodes ...int) ([]byte, error) {
+
+func (c *Client) doOperation(ctx context.Context, method, url string, bodyReader io.Reader, okStatusCodes ...int) ([]byte, error) {
 	c.logger.Debug("Jira API request", zap.String("method", method), zap.String("url", url))
 
 	var requestBody []byte
@@ -69,20 +72,22 @@ func (c *Client) doOperation(method, url string, bodyReader io.Reader, okStatusC
 		}
 	}
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
 		var bodyForRequest io.Reader
 		if requestBody != nil {
 			bodyForRequest = bytes.NewReader(requestBody)
 		}
 
-		req, err := http.NewRequest(method, url, bodyForRequest)
+		req, err := http.NewRequestWithContext(ctx, method, url, bodyForRequest)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create %s request: %w", method, err)
 		}
 
-		credentials := base64.StdEncoding.EncodeToString(
-			[]byte(c.username + ":" + c.apiToken))
-		req.Header.Set("Authorization", "Basic "+credentials)
+		req.Header.Set("Authorization", c.authHeader)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.client.Do(req)
@@ -102,12 +107,23 @@ func (c *Client) doOperation(method, url string, bodyReader io.Reader, okStatusC
 			}
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+		isRetryable := resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusBadGateway ||
+			resp.StatusCode == http.StatusServiceUnavailable ||
+			resp.StatusCode == http.StatusGatewayTimeout
+
+		if isRetryable && attempt < maxAttempts {
 			waitDuration := c.calculateRetryWait(resp, attempt)
-			c.logger.Info("Rate limited by Jira, retrying",
+			c.logger.Info("Retryable error from Jira, retrying",
+				zap.Int("status", resp.StatusCode),
 				zap.Int("attempt", attempt),
 				zap.Duration("wait", waitDuration))
-			<-c.sleepFn(waitDuration)
+
+			select {
+			case <-c.sleepFn(waitDuration):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 			continue
 		}
 
@@ -119,7 +135,7 @@ func (c *Client) doOperation(method, url string, bodyReader io.Reader, okStatusC
 			method, url, resp.StatusCode, bodyStr)
 	}
 
-	return nil, fmt.Errorf("failed to %s %s after %d retries", method, url, maxRetries)
+	return nil, fmt.Errorf("failed to %s %s after %d attempts", method, url, maxAttempts)
 }
 
 func (c *Client) calculateRetryWait(resp *http.Response, attempt int) time.Duration {
@@ -144,20 +160,34 @@ func (c *Client) calculateRetryWait(resp *http.Response, attempt int) time.Durat
 	return time.Duration(float64(backoffSeconds)+jitter) * time.Second
 }
 
-func (c *Client) doGet(url string) ([]byte, error) {
-	return c.doOperation("GET", url, nil, http.StatusOK)
+func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
+	return c.doOperation(ctx, "GET", url, nil, http.StatusOK)
 }
 
-func (c *Client) doPut(url string, body io.Reader) ([]byte, error) {
-	return c.doOperation("PUT", url, body, http.StatusNoContent, http.StatusOK)
+func (c *Client) doPut(ctx context.Context, url string, body io.Reader) ([]byte, error) {
+	return c.doOperation(ctx, "PUT", url, body, http.StatusNoContent, http.StatusOK)
 }
 
-func (c *Client) doPost(url string, body io.Reader) ([]byte, error) {
-	return c.doOperation("POST", url, body, http.StatusNoContent, http.StatusCreated, http.StatusOK)
+func (c *Client) doPost(ctx context.Context, url string, body io.Reader) ([]byte, error) {
+	return c.doOperation(ctx, "POST", url, body, http.StatusNoContent, http.StatusCreated, http.StatusOK)
+}
+
+func validateIssueKey(key string) error {
+	if !validIssueKey.MatchString(key) {
+		return fmt.Errorf("invalid issue key: %q", key)
+	}
+	return nil
+}
+
+func validateCommentID(id string) error {
+	if !validCommentID.MatchString(id) {
+		return fmt.Errorf("invalid comment ID: %q", id)
+	}
+	return nil
 }
 
 // SearchTickets searches for issues using JQL with optional pagination.
-func (c *Client) SearchTickets(jql string, maxResults int, nextPageToken string) (*JiraSearchResponse, error) {
+func (c *Client) SearchTickets(ctx context.Context, jql string, maxResults int, nextPageToken string) (*JiraSearchResponse, error) {
 	url := fmt.Sprintf("%s/rest/api/3/search/jql", c.baseURL)
 
 	payload := map[string]any{
@@ -174,7 +204,7 @@ func (c *Client) SearchTickets(jql string, maxResults int, nextPageToken string)
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	body, err := c.doPost(url, bytes.NewReader(jsonPayload))
+	body, err := c.doPost(ctx, url, bytes.NewReader(jsonPayload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to search tickets: %w", err)
 	}
@@ -186,28 +216,49 @@ func (c *Client) SearchTickets(jql string, maxResults int, nextPageToken string)
 	return &result, nil
 }
 
-// GetComments retrieves all comments on a ticket.
-func (c *Client) GetComments(key string) ([]JiraComment, error) {
-	url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment", c.baseURL, key)
-
-	body, err := c.doGet(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments for %s: %w", key, err)
+// GetComments retrieves all comments on a ticket, paginating as needed.
+func (c *Client) GetComments(ctx context.Context, key string) ([]JiraComment, error) {
+	if err := validateIssueKey(key); err != nil {
+		return nil, err
 	}
 
-	var result JiraComments
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode comments: %w", err)
+	var all []JiraComment
+	startAt := 0
+	for {
+		url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment?startAt=%d", c.baseURL, key, startAt)
+
+		body, err := c.doGet(ctx, url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get comments for %s: %w", key, err)
+		}
+
+		var result JiraComments
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&result); err != nil {
+			return nil, fmt.Errorf("failed to decode comments: %w", err)
+		}
+
+		if result.Comments != nil {
+			all = append(all, result.Comments...)
+		}
+
+		if startAt+len(result.Comments) >= result.Total {
+			break
+		}
+		startAt += len(result.Comments)
 	}
 
-	if result.Comments == nil {
+	if all == nil {
 		return []JiraComment{}, nil
 	}
-	return result.Comments, nil
+	return all, nil
 }
 
 // AddComment adds a comment to a ticket. Text is converted to ADF.
-func (c *Client) AddComment(key, comment string) error {
+func (c *Client) AddComment(ctx context.Context, key, comment string) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment", c.baseURL, key)
 
 	payload := map[string]any{
@@ -218,14 +269,21 @@ func (c *Client) AddComment(key, comment string) error {
 		return fmt.Errorf("failed to marshal comment payload: %w", err)
 	}
 
-	if _, err := c.doPost(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPost(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to add comment to %s: %w", key, err)
 	}
 	return nil
 }
 
 // UpdateComment replaces the body of an existing comment.
-func (c *Client) UpdateComment(key, commentID, body string) error {
+func (c *Client) UpdateComment(ctx context.Context, key, commentID, body string) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+	if err := validateCommentID(commentID); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment/%s", c.baseURL, key, commentID)
 
 	payload := map[string]any{
@@ -236,14 +294,18 @@ func (c *Client) UpdateComment(key, commentID, body string) error {
 		return fmt.Errorf("failed to marshal comment payload: %w", err)
 	}
 
-	if _, err := c.doPut(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPut(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to update comment %s on %s: %w", commentID, key, err)
 	}
 	return nil
 }
 
 // AddCommentADF adds a comment using a pre-built ADF body.
-func (c *Client) AddCommentADF(key string, adfBody map[string]any) error {
+func (c *Client) AddCommentADF(ctx context.Context, key string, adfBody map[string]any) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment", c.baseURL, key)
 
 	payload := map[string]any{"body": adfBody}
@@ -252,14 +314,21 @@ func (c *Client) AddCommentADF(key string, adfBody map[string]any) error {
 		return fmt.Errorf("failed to marshal comment payload: %w", err)
 	}
 
-	if _, err := c.doPost(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPost(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to add comment to %s: %w", key, err)
 	}
 	return nil
 }
 
 // UpdateCommentADF replaces a comment body using a pre-built ADF body.
-func (c *Client) UpdateCommentADF(key, commentID string, adfBody map[string]any) error {
+func (c *Client) UpdateCommentADF(ctx context.Context, key, commentID string, adfBody map[string]any) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+	if err := validateCommentID(commentID); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s/comment/%s", c.baseURL, key, commentID)
 
 	payload := map[string]any{"body": adfBody}
@@ -268,14 +337,18 @@ func (c *Client) UpdateCommentADF(key, commentID string, adfBody map[string]any)
 		return fmt.Errorf("failed to marshal comment payload: %w", err)
 	}
 
-	if _, err := c.doPut(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPut(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to update comment %s on %s: %w", commentID, key, err)
 	}
 	return nil
 }
 
 // AddLabel adds a label to a ticket.
-func (c *Client) AddLabel(key, label string) error {
+func (c *Client) AddLabel(ctx context.Context, key, label string) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s", c.baseURL, key)
 
 	payload := map[string]any{
@@ -290,14 +363,18 @@ func (c *Client) AddLabel(key, label string) error {
 		return fmt.Errorf("failed to marshal label payload: %w", err)
 	}
 
-	if _, err := c.doPut(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPut(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to add label %q to %s: %w", label, key, err)
 	}
 	return nil
 }
 
 // RemoveLabel removes a label from a ticket.
-func (c *Client) RemoveLabel(key, label string) error {
+func (c *Client) RemoveLabel(ctx context.Context, key, label string) error {
+	if err := validateIssueKey(key); err != nil {
+		return err
+	}
+
 	url := fmt.Sprintf("%s/rest/api/3/issue/%s", c.baseURL, key)
 
 	payload := map[string]any{
@@ -312,7 +389,7 @@ func (c *Client) RemoveLabel(key, label string) error {
 		return fmt.Errorf("failed to marshal label payload: %w", err)
 	}
 
-	if _, err := c.doPut(url, bytes.NewReader(jsonPayload)); err != nil {
+	if _, err := c.doPut(ctx, url, bytes.NewReader(jsonPayload)); err != nil {
 		return fmt.Errorf("failed to remove label %q from %s: %w", label, key, err)
 	}
 	return nil
