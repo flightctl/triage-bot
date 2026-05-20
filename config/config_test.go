@@ -42,8 +42,8 @@ ai:
 	if cfg.AI.MaxConcurrent != 3 {
 		t.Errorf("max_concurrent = %d, want 3", cfg.AI.MaxConcurrent)
 	}
-	if cfg.Triage.AutoFixThreshold != 60 {
-		t.Errorf("auto_fix_threshold = %d, want 60", cfg.Triage.AutoFixThreshold)
+	if cfg.Triage.AutoFixThreshold != 80 {
+		t.Errorf("auto_fix_threshold = %d, want 80", cfg.Triage.AutoFixThreshold)
 	}
 	if cfg.Jira.BotUsername != "bot@example.com" {
 		t.Errorf("bot_username = %q, want %q", cfg.Jira.BotUsername, "bot@example.com")

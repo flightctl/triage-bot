@@ -293,6 +293,28 @@ func (c *Client) AddLabel(key, label string) error {
 	return nil
 }
 
+// RemoveLabel removes a label from a ticket.
+func (c *Client) RemoveLabel(key, label string) error {
+	url := fmt.Sprintf("%s/rest/api/3/issue/%s", c.baseURL, key)
+
+	payload := map[string]any{
+		"update": map[string]any{
+			"labels": []map[string]string{
+				{"remove": label},
+			},
+		},
+	}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal label payload: %w", err)
+	}
+
+	if _, err := c.doPut(url, bytes.NewReader(jsonPayload)); err != nil {
+		return fmt.Errorf("failed to remove label %q from %s: %w", label, key, err)
+	}
+	return nil
+}
+
 func truncateForError(body []byte) string {
 	s := string(body)
 	if len(s) > maxBodyErrorLength {

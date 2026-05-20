@@ -25,6 +25,7 @@ type JiraClient interface {
 	AddCommentADF(key string, adfBody map[string]any) error
 	UpdateCommentADF(key, commentID string, adfBody map[string]any) error
 	AddLabel(key, label string) error
+	RemoveLabel(key, label string) error
 }
 
 // Action describes what the processor decided to do for an issue.
@@ -96,70 +97,63 @@ func (p *Processor) Process(issue jira.JiraIssue) error {
 		return fmt.Errorf("triage failed for %s: %w", key, err)
 	}
 
-	adfBody, err := buildADFComment(assessment, descHash)
-	if err != nil {
+	if err := p.postComment(key, action, existingCommentID, assessment, descHash); err != nil {
+		return err
+	}
+
+	p.syncLabel(key, issue.Fields.Labels, meta)
+	return nil
+}
+
+func (p *Processor) postComment(key string, action Action, existingCommentID, assessment, descHash string) error {
+	adfBody, adfErr := buildADFComment(assessment, descHash)
+	if adfErr != nil {
 		p.logger.Warn("Failed to parse ADF output, falling back to plain text",
 			zap.String("issue", key),
-			zap.Error(err))
-		return p.postPlainText(key, action, existingCommentID, assessment, descHash, meta)
+			zap.Error(adfErr))
 	}
 
 	if p.cfg.DryRun {
-		p.logger.Info("DRY RUN: would post triage comment",
-			zap.String("issue", key),
-			zap.String("action", action.String()),
-			zap.Any("adf", adfBody))
-		if meta != nil {
-			p.logger.Info("DRY RUN: metadata sidecar",
+		if adfErr == nil {
+			p.logger.Info("DRY RUN: would post triage comment",
 				zap.String("issue", key),
-				zap.String("recommendation", meta.Recommendation),
-				zap.String("confidence", meta.Confidence))
+				zap.String("action", action.String()),
+				zap.Any("adf", adfBody))
+		} else {
+			p.logger.Info("DRY RUN: would post triage comment (plain text)",
+				zap.String("issue", key),
+				zap.String("action", action.String()),
+				zap.String("comment", appendHashFooter(assessment, descHash)))
 		}
 		return nil
 	}
 
 	switch action {
 	case ActionCreate:
-		if err := p.jira.AddCommentADF(key, adfBody); err != nil {
-			return fmt.Errorf("failed to post comment on %s: %w", key, err)
+		if adfErr == nil {
+			if err := p.jira.AddCommentADF(key, adfBody); err != nil {
+				return fmt.Errorf("failed to post comment on %s: %w", key, err)
+			}
+		} else {
+			if err := p.jira.AddComment(key, appendHashFooter(assessment, descHash)); err != nil {
+				return fmt.Errorf("failed to post comment on %s: %w", key, err)
+			}
 		}
 		p.logger.Info("Posted triage comment", zap.String("issue", key))
 
 	case ActionUpdate:
-		if err := p.jira.UpdateCommentADF(key, existingCommentID, adfBody); err != nil {
-			return fmt.Errorf("failed to update comment on %s: %w", key, err)
+		if adfErr == nil {
+			if err := p.jira.UpdateCommentADF(key, existingCommentID, adfBody); err != nil {
+				return fmt.Errorf("failed to update comment on %s: %w", key, err)
+			}
+		} else {
+			if err := p.jira.UpdateComment(key, existingCommentID, appendHashFooter(assessment, descHash)); err != nil {
+				return fmt.Errorf("failed to update comment on %s: %w", key, err)
+			}
 		}
 		p.logger.Info("Updated triage comment", zap.String("issue", key))
 	}
 
-	p.applyLabel(key, meta)
-	return nil
-}
-
-func (p *Processor) postPlainText(key string, action Action, commentID, assessment, descHash string, meta *Metadata) error {
-	commentBody := appendHashFooter(assessment, descHash)
-
-	if p.cfg.DryRun {
-		p.logger.Info("DRY RUN: would post triage comment (plain text)",
-			zap.String("issue", key),
-			zap.String("action", action.String()),
-			zap.String("comment", commentBody))
-		return nil
-	}
-
-	switch action {
-	case ActionCreate:
-		if err := p.jira.AddComment(key, commentBody); err != nil {
-			return fmt.Errorf("failed to post comment on %s: %w", key, err)
-		}
-	case ActionUpdate:
-		if err := p.jira.UpdateComment(key, commentID, commentBody); err != nil {
-			return fmt.Errorf("failed to update comment on %s: %w", key, err)
-		}
-	}
-
-	p.logger.Info("Posted triage comment (plain text fallback)", zap.String("issue", key))
-	p.applyLabel(key, meta)
 	return nil
 }
 
@@ -201,24 +195,46 @@ func (p *Processor) findBotComment(comments []jira.JiraComment) *jira.JiraCommen
 	return nil
 }
 
-func (p *Processor) applyLabel(key string, meta *Metadata) {
-	if p.cfg.Triage.AutoFixLabel == "" {
+func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata) {
+	label := p.cfg.Triage.AutoFixLabel
+	if label == "" {
 		return
 	}
-	if !meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold) {
-		return
-	}
-	if err := p.jira.AddLabel(key, p.cfg.Triage.AutoFixLabel); err != nil {
-		p.logger.Warn("Failed to add auto-fix label",
+
+	shouldHaveLabel := meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold)
+	hasLabel := containsLabel(currentLabels, label)
+
+	if shouldHaveLabel && !hasLabel {
+		if err := p.jira.AddLabel(key, label); err != nil {
+			p.logger.Warn("Failed to add auto-fix label",
+				zap.String("issue", key),
+				zap.Error(err))
+			return
+		}
+		p.logger.Info("Applied auto-fix label",
 			zap.String("issue", key),
-			zap.String("label", p.cfg.Triage.AutoFixLabel),
-			zap.Error(err))
-		return
+			zap.String("label", label),
+			zap.Int("likelihood", *meta.AutoFixLikelihood))
+	} else if !shouldHaveLabel && hasLabel {
+		if err := p.jira.RemoveLabel(key, label); err != nil {
+			p.logger.Warn("Failed to remove auto-fix label",
+				zap.String("issue", key),
+				zap.Error(err))
+			return
+		}
+		p.logger.Info("Removed auto-fix label (no longer qualifies)",
+			zap.String("issue", key),
+			zap.String("label", label))
 	}
-	p.logger.Info("Applied auto-fix label",
-		zap.String("issue", key),
-		zap.String("label", p.cfg.Triage.AutoFixLabel),
-		zap.Int("likelihood", *meta.AutoFixLikelihood))
+}
+
+func containsLabel(labels []string, target string) bool {
+	for _, l := range labels {
+		if l == target {
+			return true
+		}
+	}
+	return false
 }
 
 // buildADFComment parses the AI's ADF JSON output and appends the
