@@ -1,6 +1,8 @@
 package triage
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"triage-bot/config"
@@ -56,8 +58,13 @@ func TestExtractHash(t *testing.T) {
 		},
 		{
 			name: "hash at end without trailing underscore",
-			body: "text\n_triage-bot | desc:abc123",
-			want: "abc123",
+			body: "text\n_triage-bot | desc:abc123def456",
+			want: "abc123def456",
+		},
+		{
+			name: "wrong length hash rejected",
+			body: "text\n_triage-bot | desc:abc123_",
+			want: "",
 		},
 	}
 
@@ -178,6 +185,38 @@ func TestBuildADFComment_MissingDocType(t *testing.T) {
 	_, err := buildADFComment(`{"type":"paragraph","content":[]}`, "abc123")
 	if err == nil {
 		t.Error("expected error for missing doc type")
+	}
+}
+
+func TestADFHashRoundtrip(t *testing.T) {
+	assessment := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	hash := "abc123def456"
+
+	adf, err := buildADFComment(assessment, hash)
+	if err != nil {
+		t.Fatalf("buildADFComment failed: %v", err)
+	}
+
+	// Simulate what Jira does: marshal to JSON, then unmarshal via ADFText
+	adfJSON, err := json.Marshal(adf)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var extracted jira.ADFText
+	if err := json.Unmarshal(adfJSON, &extracted); err != nil {
+		t.Fatalf("ADFText unmarshal failed: %v", err)
+	}
+
+	plainText := string(extracted)
+
+	if !strings.Contains(plainText, hashPrefix) {
+		t.Errorf("plain text does not contain hash prefix %q:\n%s", hashPrefix, plainText)
+	}
+
+	got := extractHash(plainText)
+	if got != hash {
+		t.Errorf("roundtrip extractHash = %q, want %q\nplain text:\n%s", got, hash, plainText)
 	}
 }
 

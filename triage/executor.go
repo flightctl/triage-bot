@@ -2,6 +2,7 @@ package triage
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,10 +33,9 @@ type TemplateData struct {
 
 // Executor invokes the AI CLI to run a triage assessment.
 type Executor struct {
-	cfg      config.Config
-	tmpl     *template.Template
-	logger   *zap.Logger
-	execFn   func(name string, args ...string) *exec.Cmd
+	cfg    config.Config
+	tmpl   *template.Template
+	logger *zap.Logger
 }
 
 func NewExecutor(cfg config.Config, logger *zap.Logger) (*Executor, error) {
@@ -48,7 +48,6 @@ func NewExecutor(cfg config.Config, logger *zap.Logger) (*Executor, error) {
 		cfg:    cfg,
 		tmpl:   tmpl,
 		logger: logger,
-		execFn: exec.Command,
 	}, nil
 }
 
@@ -69,7 +68,7 @@ func loadTemplate(cfg config.TriageConfig) (*template.Template, error) {
 
 // Run executes the triage assessment for a single issue.
 // Returns the markdown assessment text and metadata, or an error.
-func (e *Executor) Run(issueKey, projectKey string) (string, *Metadata, error) {
+func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string, *Metadata, error) {
 	outputPath := filepath.Join(outputBase, issueKey+".md")
 	metadataPath := filepath.Join(outputBase, issueKey+".meta.json")
 	workDir := filepath.Join(workspaceBase, issueKey)
@@ -103,7 +102,7 @@ func (e *Executor) Run(issueKey, projectKey string) (string, *Metadata, error) {
 		return "", nil, fmt.Errorf("failed to write task file: %w", err)
 	}
 
-	if err := e.runCLI(taskPath, workDir); err != nil {
+	if err := e.runCLI(ctx, taskPath, workDir); err != nil {
 		return "", nil, err
 	}
 
@@ -126,7 +125,7 @@ func (e *Executor) Run(issueKey, projectKey string) (string, *Metadata, error) {
 	return string(assessment), meta, nil
 }
 
-func (e *Executor) runCLI(taskPath, workDir string) error {
+func (e *Executor) runCLI(ctx context.Context, taskPath, workDir string) error {
 	prompt := fmt.Sprintf("Read %s and complete the task described there.", taskPath)
 
 	args := e.buildArgs(prompt)
@@ -135,28 +134,23 @@ func (e *Executor) runCLI(taskPath, workDir string) error {
 		zap.String("provider", e.cfg.AI.Provider),
 		zap.String("model", e.cfg.AI.Model))
 
-	cmd := e.execFn(args[0], args[1:]...)
+	timeout := time.Duration(e.cfg.AI.TimeoutMinutes) * time.Minute
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = workDir
 	cmd.Env = e.buildEnv()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	timeout := time.Duration(e.cfg.AI.TimeoutMinutes) * time.Minute
-	done := make(chan error, 1)
-	go func() { done <- cmd.Run() }()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("AI CLI exited with error: %w", err)
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("AI CLI timed out or cancelled after %v: %w", timeout, ctx.Err())
 		}
-		return nil
-	case <-time.After(timeout):
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		return fmt.Errorf("AI CLI timed out after %v", timeout)
+		return fmt.Errorf("AI CLI exited with error: %w", err)
 	}
+	return nil
 }
 
 func (e *Executor) buildArgs(prompt string) []string {

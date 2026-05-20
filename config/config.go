@@ -2,10 +2,13 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/viper"
 )
+
+var validProjectKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+$`)
 
 type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
@@ -192,6 +195,11 @@ func (c *Config) validate() error {
 	}
 	if len(c.Jira.ProjectKeys) == 0 {
 		return fmt.Errorf("jira.project_keys must contain at least one project key")
+	}
+	for _, key := range c.Jira.ProjectKeys {
+		if !validProjectKey.MatchString(key) {
+			return fmt.Errorf("jira.project_keys: %q is not a valid Jira project key (must match %s)", key, validProjectKey.String())
+		}
 	}
 	if c.Jira.BotUsername == "" {
 		c.Jira.BotUsername = c.Jira.Username

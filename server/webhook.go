@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,24 +14,27 @@ import (
 	"go.uber.org/zap"
 
 	"triage-bot/jira"
+	"triage-bot/scanner"
 )
 
 // IssueProcessor processes a single Jira issue.
 type IssueProcessor interface {
-	Process(issue jira.JiraIssue) error
+	Process(ctx context.Context, issue jira.JiraIssue) error
 }
 
 // WebhookHandler handles incoming Jira webhook events.
 type WebhookHandler struct {
 	processor IssueProcessor
+	inFlight  *scanner.InFlight
 	secret    string
 	sem       chan struct{}
 	logger    *zap.Logger
 }
 
-func NewWebhookHandler(processor IssueProcessor, secret string, maxConcurrent int, logger *zap.Logger) *WebhookHandler {
+func NewWebhookHandler(processor IssueProcessor, inFlight *scanner.InFlight, secret string, maxConcurrent int, logger *zap.Logger) *WebhookHandler {
 	return &WebhookHandler{
 		processor: processor,
+		inFlight:  inFlight,
 		secret:    secret,
 		sem:       make(chan struct{}, maxConcurrent),
 		logger:    logger,
@@ -81,19 +85,26 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("event", payload.WebhookEvent),
 		zap.String("issue", payload.Issue.Key))
 
-	// Process asynchronously so we respond to Jira within its timeout.
-	// Use a semaphore to bound concurrent processing.
+	if !h.inFlight.TryAcquire(payload.Issue.Key) {
+		h.logger.Debug("Issue already in-flight, skipping webhook",
+			zap.String("issue", payload.Issue.Key))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	select {
 	case h.sem <- struct{}{}:
 		go func() {
 			defer func() { <-h.sem }()
-			if err := h.processor.Process(payload.Issue); err != nil {
+			defer h.inFlight.Release(payload.Issue.Key)
+			if err := h.processor.Process(context.Background(), payload.Issue); err != nil {
 				h.logger.Error("Webhook-triggered processing failed",
 					zap.String("issue", payload.Issue.Key),
 					zap.Error(err))
 			}
 		}()
 	default:
+		h.inFlight.Release(payload.Issue.Key)
 		h.logger.Warn("Webhook throttled, too many concurrent requests",
 			zap.String("issue", payload.Issue.Key))
 	}

@@ -1,6 +1,7 @@
 package triage
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -69,7 +70,7 @@ func NewProcessor(jiraClient JiraClient, executor *Executor, cfg config.Config, 
 }
 
 // Process runs the triage workflow for a single issue.
-func (p *Processor) Process(issue jira.JiraIssue) error {
+func (p *Processor) Process(ctx context.Context, issue jira.JiraIssue) error {
 	key := issue.Key
 	projectKey := issue.Fields.Project.Key
 	description := string(issue.Fields.Description)
@@ -92,7 +93,7 @@ func (p *Processor) Process(issue jira.JiraIssue) error {
 			zap.String("issue", key))
 	}
 
-	assessment, meta, err := p.executor.Run(key, projectKey)
+	assessment, meta, err := p.executor.Run(ctx, key, projectKey)
 	if err != nil {
 		return fmt.Errorf("triage failed for %s: %w", key, err)
 	}
@@ -201,6 +202,21 @@ func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata
 		return
 	}
 
+	if p.cfg.DryRun {
+		shouldHaveLabel := meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold)
+		hasLabel := containsLabel(currentLabels, label)
+		if shouldHaveLabel && !hasLabel {
+			p.logger.Info("DRY RUN: would add auto-fix label",
+				zap.String("issue", key),
+				zap.String("label", label))
+		} else if !shouldHaveLabel && hasLabel {
+			p.logger.Info("DRY RUN: would remove auto-fix label",
+				zap.String("issue", key),
+				zap.String("label", label))
+		}
+		return
+	}
+
 	shouldHaveLabel := meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold)
 	hasLabel := containsLabel(currentLabels, label)
 
@@ -211,10 +227,14 @@ func (p *Processor) syncLabel(key string, currentLabels []string, meta *Metadata
 				zap.Error(err))
 			return
 		}
+		likelihood := 0
+		if meta != nil && meta.AutoFixLikelihood != nil {
+			likelihood = *meta.AutoFixLikelihood
+		}
 		p.logger.Info("Applied auto-fix label",
 			zap.String("issue", key),
 			zap.String("label", label),
-			zap.Int("likelihood", *meta.AutoFixLikelihood))
+			zap.Int("likelihood", likelihood))
 	} else if !shouldHaveLabel && hasLabel {
 		if err := p.jira.RemoveLabel(key, label); err != nil {
 			p.logger.Warn("Failed to remove auto-fix label",
@@ -296,8 +316,12 @@ func extractHash(body string) string {
 	rest := body[start:]
 	for i, c := range rest {
 		if c == '_' || c == '\n' {
-			return rest[:i]
+			rest = rest[:i]
+			break
 		}
+	}
+	if len(rest) != hashLen {
+		return ""
 	}
 	return rest
 }

@@ -156,14 +156,17 @@ func (c *Client) doPost(url string, body io.Reader) ([]byte, error) {
 	return c.doOperation("POST", url, body, http.StatusNoContent, http.StatusCreated, http.StatusOK)
 }
 
-// SearchTickets searches for issues using JQL.
-func (c *Client) SearchTickets(jql string, maxResults int) (*JiraSearchResponse, error) {
+// SearchTickets searches for issues using JQL with optional pagination.
+func (c *Client) SearchTickets(jql string, maxResults int, nextPageToken string) (*JiraSearchResponse, error) {
 	url := fmt.Sprintf("%s/rest/api/3/search/jql", c.baseURL)
 
 	payload := map[string]any{
 		"jql":        jql,
 		"maxResults": maxResults,
 		"fields":     []string{"summary", "description", "status", "issuetype", "project", "components", "labels", "assignee", "created", "updated", "creator", "reporter"},
+	}
+	if nextPageToken != "" {
+		payload["nextPageToken"] = nextPageToken
 	}
 
 	jsonPayload, err := json.Marshal(payload)

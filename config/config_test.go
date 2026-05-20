@@ -58,7 +58,7 @@ func TestLoadConfig_MissingRequired(t *testing.T) {
 	}{
 		{
 			name:    "missing base_url",
-			content: `jira: {username: "u", api_token: "t", project_keys: ["P"]}`,
+			content: `jira: {username: "u", api_token: "t", project_keys: ["PROJ"]}`,
 			wantErr: "jira.base_url is required",
 		},
 		{
@@ -69,14 +69,14 @@ func TestLoadConfig_MissingRequired(t *testing.T) {
 		{
 			name: "claude without auth",
 			content: `
-jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["P"]}
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
 ai: {provider: claude}`,
 			wantErr: "claude requires either api_key or vertex_project_id",
 		},
 		{
 			name: "vertex without region",
 			content: `
-jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["P"]}
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
 ai: {provider: claude, claude: {vertex_project_id: "proj"}}`,
 			wantErr: "claude.vertex_region is required when using Vertex AI",
 		},
@@ -101,7 +101,7 @@ ai: {provider: claude, claude: {vertex_project_id: "proj"}}`,
 
 func TestLoadConfig_UseVertexAI(t *testing.T) {
 	content := `
-jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["P"]}
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
 ai:
   provider: claude
   claude:
@@ -125,7 +125,7 @@ ai:
 
 func TestLoadConfig_DirectAPIKey(t *testing.T) {
 	content := `
-jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["P"]}
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
 ai:
   provider: claude
   claude:
@@ -148,7 +148,7 @@ ai:
 
 func TestLoadConfig_ImportDestDefault(t *testing.T) {
 	content := `
-jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["P"]}
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
 ai: {provider: claude, claude: {api_key: "sk-test"}}
 triage:
   workflow_path: /custom/path

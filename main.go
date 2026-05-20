@@ -59,11 +59,12 @@ func main() {
 
 	processor := triage.NewProcessor(jiraClient, executor, *cfg, logger)
 
-	s := scanner.NewScanner(jiraClient, processor, *cfg, logger)
+	inFlight := scanner.NewInFlight()
+	s := scanner.NewScanner(jiraClient, processor, inFlight, *cfg, logger)
 
 	var webhookHandler *server.WebhookHandler
 	if cfg.Server.WebhookSecret != "" {
-		webhookHandler = server.NewWebhookHandler(processor, cfg.Server.WebhookSecret, cfg.AI.MaxConcurrent, logger)
+		webhookHandler = server.NewWebhookHandler(processor, inFlight, cfg.Server.WebhookSecret, cfg.AI.MaxConcurrent, logger)
 		logger.Info("Webhook endpoint enabled at /webhook")
 	} else {
 		logger.Info("Webhook endpoint disabled (no webhook_secret configured)")

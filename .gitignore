@@ -9,5 +9,8 @@
 # OS
 .DS_Store
 
+# Review artifacts
+.artifacts/
+
 # Claude Code
 .claude/
