@@ -1,0 +1,8 @@
+.git
+.artifacts
+.claude
+chart/
+deploy/
+docs/
+*.md
+Makefile

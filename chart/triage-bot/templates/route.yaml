@@ -1,4 +1,4 @@
-{{- if and .Values.route.enabled .Values.secrets.webhookSecret -}}
+{{- if and .Values.route.enabled .Values.route.webhookConfigured -}}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
