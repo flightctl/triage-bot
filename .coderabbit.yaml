@@ -186,7 +186,7 @@ reviews:
     # Skills: prompt-injection-mitigation, file-protection,
     #         third-party-model-security, bidirectional-filtering,
     #         output-validation-sandbox
-    - path: "**/{llm,prompt,chat,completion}**/*"
+    - path: "**/{llm,prompt,chat,completion}/**/*"
       instructions: |
         LLM security (prodsec-skills):
         - Prompt injection: separate system/user content; never
@@ -316,6 +316,18 @@ reviews:
           convention
         - Sensitive values (tokens, keys, passwords) must reference
           Secrets, never appear as plaintext defaults
+
+    # ── Helm chart quality ───────────────────────────────────────
+    - path: "chart/**/*.{yaml,tpl}"
+      instructions: |
+        Helm quality:
+        - .Values used in command: or args: must be quoted to prevent
+          injection via Helm values
+        - Required values with no sane default must use required() or
+          fail assertions, not silently render empty
+        - Flag template logic that produces invalid YAML for untested
+          value combinations (e.g., empty lists, missing optional maps)
+        - NOTES.txt must reflect actual resource names and access methods
 
     # ── C/C++ ────────────────────────────────────────────────────
     # Skills: safe-c-functions, compiler-hardening
