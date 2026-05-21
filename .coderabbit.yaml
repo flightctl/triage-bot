@@ -243,7 +243,7 @@ reviews:
     # ── Supply chain & dependencies ──────────────────────────────
     # Skills: supply-chain-risk-auditor, sbom-provenance,
     #         software-signing, secure-pipeline, vulnerability-management
-    - path: "**/{requirements*.txt,Pipfile*,pyproject.toml,package*.json,go.mod,go.sum,Cargo.toml,Gemfile*,pom.xml,build.gradle*}"
+    - path: "**/{requirements*.txt,Pipfile*,pyproject.toml,package*.json,package-lock.json,go.mod,go.sum,Cargo.toml,Cargo.lock,Gemfile*,Gemfile.lock,pom.xml,build.gradle*}"
       instructions: |
         Supply chain security (prodsec-skills):
         - New deps: justify need, check license compatibility
