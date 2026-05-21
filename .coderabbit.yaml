@@ -1,18 +1,24 @@
-# CodeRabbit configuration for prodsec-skills
-# Enforces Red Hat Product Security concerns during code review.
-# Skills source: module/skills/*/SKILL.md (129 skills, 4 categories)
+# CodeRabbit configuration for triage-bot
+# Security rules inherited from prodsec-skills, plus Go code quality,
+# test quality, and Helm/config compatibility checks.
 #
 # Schema: https://coderabbit.ai/integrations/schema.v2.json
 # Validate: comment "@coderabbitai configuration" on any PR
 #
-#
 language: "en-US"
 tone_instructions: "Be direct. State severity and impact. Cover security, correctness, and maintainability."
+early_access: true
 
 reviews:
   profile: "assertive"
   request_changes_workflow: true
   high_level_summary: true
+  high_level_summary_instructions: >-
+    Summarize changes in terms of which packages are affected (jira/,
+    triage/, scanner/, server/, workflow/, config/), whether the change
+    affects the control plane (polling, webhooks, comment state machine)
+    or the AI invocation path (executor, metadata, task template), and
+    whether it touches configuration, Helm charts, or deployment.
   collapse_walkthrough: false
   sequence_diagrams: true
 
@@ -34,6 +40,42 @@ reviews:
     base_branches:
       - "main"
       - "release/.*"
+    ignore_title_keywords:
+      - "[skip-review]"
+      - "WIP"
+
+  labeling_instructions:
+    - label: "jira-client"
+      instructions: >-
+        Apply when the PR modifies files in jira/ (client.go, models.go).
+        Changes here affect Jira API interaction, retry logic, or ADF handling.
+
+    - label: "ai-executor"
+      instructions: >-
+        Apply when the PR modifies triage/executor.go, triage/metadata.go,
+        or task.tmpl. Changes here affect how the AI CLI is invoked or how
+        its output is parsed.
+
+    - label: "scanner"
+      instructions: >-
+        Apply when the PR modifies scanner/. Changes here affect the polling
+        loop, JQL query building, or worker pool concurrency.
+
+    - label: "webhook"
+      instructions: >-
+        Apply when the PR modifies server/webhook.go or server/health.go.
+        Changes here affect the HTTP server, webhook HMAC verification, or
+        health endpoint.
+
+    - label: "helm/deploy"
+      instructions: >-
+        Apply when the PR modifies files in chart/ or deploy/. Changes here
+        affect OCP deployment, Helm values, or multi-consumer configuration.
+
+    - label: "config"
+      instructions: >-
+        Apply when the PR modifies config/config.go or config/config_test.go.
+        Changes here affect configuration loading, validation, or env var mapping.
 
   path_instructions:
 
