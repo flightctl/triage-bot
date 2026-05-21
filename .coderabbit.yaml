@@ -74,8 +74,10 @@ reviews:
 
     - label: "config"
       instructions: >-
-        Apply when the PR modifies config/config.go or config/config_test.go.
-        Changes here affect configuration loading, validation, or env var mapping.
+        Apply when the PR modifies config/config.go, config/config_test.go,
+        chart/triage-bot/values.yaml, deploy/shared-values.yaml, or
+        deploy/*/values.yaml. Changes here affect configuration loading,
+        validation, env var mapping, or default/override values.
 
   path_instructions:
 
