@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit configuration for triage-bot
 # Security rules inherited from prodsec-skills, plus Go code quality,
 # test quality, and Helm/config compatibility checks.
@@ -11,7 +12,7 @@ early_access: true
 
 reviews:
   profile: "assertive"
-  request_changes_workflow: true
+  request_changes_workflow: false
   high_level_summary: true
   high_level_summary_instructions: >-
     Summarize changes in terms of which packages are affected (jira/,
