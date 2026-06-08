@@ -81,3 +81,36 @@ func TestShouldApplyAutoFixLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestTriageOutcome(t *testing.T) {
+	likelihood := func(v int) *int { return &v }
+
+	tests := []struct {
+		name      string
+		meta      *Metadata
+		threshold int
+		want      string
+	}{
+		{name: "nil metadata", meta: nil, threshold: 60, want: "not_fixable"},
+		{name: "NEEDS_INFO", meta: &Metadata{Recommendation: "NEEDS_INFO"}, threshold: 60, want: "missing_info"},
+		{name: "AUTO_FIX above threshold", meta: &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)}, threshold: 60, want: "autofix"},
+		{name: "AUTO_FIX at threshold", meta: &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(60)}, threshold: 60, want: "autofix"},
+		{name: "AUTO_FIX below threshold", meta: &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(50)}, threshold: 60, want: "not_fixable"},
+		{name: "AUTO_FIX nil likelihood", meta: &Metadata{Recommendation: "AUTO_FIX"}, threshold: 60, want: "not_fixable"},
+		{name: "WONT_FIX", meta: &Metadata{Recommendation: "WONT_FIX"}, threshold: 60, want: "not_fixable"},
+		{name: "CLOSE", meta: &Metadata{Recommendation: "CLOSE"}, threshold: 60, want: "not_fixable"},
+		{name: "DUPLICATE", meta: &Metadata{Recommendation: "DUPLICATE"}, threshold: 60, want: "not_fixable"},
+		{name: "FIX_NOW", meta: &Metadata{Recommendation: "FIX_NOW"}, threshold: 60, want: "not_fixable"},
+		{name: "BACKLOG", meta: &Metadata{Recommendation: "BACKLOG"}, threshold: 60, want: "not_fixable"},
+		{name: "ESCALATE", meta: &Metadata{Recommendation: "ESCALATE"}, threshold: 60, want: "not_fixable"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.meta.TriageOutcome(tt.threshold)
+			if got != tt.want {
+				t.Errorf("TriageOutcome = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

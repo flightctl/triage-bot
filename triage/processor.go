@@ -197,33 +197,49 @@ func (p *Processor) findBotComment(comments []jira.JiraComment) *jira.JiraCommen
 }
 
 func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []string, meta *Metadata) {
-	label := p.cfg.Triage.AutoFixLabel
-	if label == "" {
+	outcome := meta.TriageOutcome(p.cfg.Triage.AutoFixThreshold)
+
+	labelForOutcome := map[string]string{
+		"autofix":      p.cfg.Triage.AutoFixLabel,
+		"missing_info": p.cfg.Triage.MissingInfoLabel,
+		"not_fixable":  p.cfg.Triage.NotFixableLabel,
+	}
+
+	targetLabel := labelForOutcome[outcome]
+	if targetLabel == "" {
 		return
 	}
 
+	// All managed triage labels — we remove stale ones when outcome changes.
+	allLabels := []string{
+		p.cfg.Triage.AutoFixLabel,
+		p.cfg.Triage.MissingInfoLabel,
+		p.cfg.Triage.NotFixableLabel,
+	}
+
 	if p.cfg.DryRun {
-		shouldHaveLabel := meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold)
-		hasLabel := containsLabel(currentLabels, label)
-		if shouldHaveLabel && !hasLabel {
-			p.logger.Info("DRY RUN: would add auto-fix label",
+		if !containsLabel(currentLabels, targetLabel) {
+			p.logger.Info("DRY RUN: would add triage label",
 				zap.String("issue", key),
-				zap.String("label", label))
-		} else if !shouldHaveLabel && hasLabel {
-			p.logger.Info("DRY RUN: would remove auto-fix label",
-				zap.String("issue", key),
-				zap.String("label", label))
+				zap.String("label", targetLabel),
+				zap.String("outcome", outcome))
+		}
+		for _, old := range allLabels {
+			if old != "" && old != targetLabel && containsLabel(currentLabels, old) {
+				p.logger.Info("DRY RUN: would remove stale triage label",
+					zap.String("issue", key),
+					zap.String("label", old))
+			}
 		}
 		return
 	}
 
-	shouldHaveLabel := meta.ShouldApplyAutoFixLabel(p.cfg.Triage.AutoFixThreshold)
-	hasLabel := containsLabel(currentLabels, label)
-
-	if shouldHaveLabel && !hasLabel {
-		if err := p.jira.AddLabel(ctx, key, label); err != nil {
-			p.logger.Warn("Failed to add auto-fix label",
+	// Add the target label if not present.
+	if !containsLabel(currentLabels, targetLabel) {
+		if err := p.jira.AddLabel(ctx, key, targetLabel); err != nil {
+			p.logger.Warn("Failed to add triage label",
 				zap.String("issue", key),
+				zap.String("label", targetLabel),
 				zap.Error(err))
 			return
 		}
@@ -231,20 +247,27 @@ func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []s
 		if meta != nil && meta.AutoFixLikelihood != nil {
 			likelihood = *meta.AutoFixLikelihood
 		}
-		p.logger.Info("Applied auto-fix label",
+		p.logger.Info("Applied triage label",
 			zap.String("issue", key),
-			zap.String("label", label),
+			zap.String("label", targetLabel),
+			zap.String("outcome", outcome),
 			zap.Int("likelihood", likelihood))
-	} else if !shouldHaveLabel && hasLabel {
-		if err := p.jira.RemoveLabel(ctx, key, label); err != nil {
-			p.logger.Warn("Failed to remove auto-fix label",
+	}
+
+	// Remove stale labels from previous triage runs.
+	for _, old := range allLabels {
+		if old != "" && old != targetLabel && containsLabel(currentLabels, old) {
+			if err := p.jira.RemoveLabel(ctx, key, old); err != nil {
+				p.logger.Warn("Failed to remove stale triage label",
+					zap.String("issue", key),
+					zap.String("label", old),
+					zap.Error(err))
+				continue
+			}
+			p.logger.Info("Removed stale triage label",
 				zap.String("issue", key),
-				zap.Error(err))
-			return
+				zap.String("label", old))
 		}
-		p.logger.Info("Removed auto-fix label (no longer qualifies)",
-			zap.String("issue", key),
-			zap.String("label", label))
 	}
 }
 
