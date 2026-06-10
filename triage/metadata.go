@@ -49,11 +49,11 @@ func (m *Metadata) ShouldApplyAutoFixLabel(threshold int) bool {
 
 // TriageOutcome determines the triage label category based on the
 // recommendation. Returns "autofix", "missing_info", or "not_fixable".
-// An AUTO_FIX recommendation that falls below threshold is treated as
-// not_fixable since the triage bot assessed it but deemed it unsuitable.
+// Returns "" when metadata is nil (no assessment happened — e.g. AI
+// crashed or sidecar was not written), so callers can skip label changes.
 func (m *Metadata) TriageOutcome(autofixThreshold int) string {
 	if m == nil {
-		return "not_fixable"
+		return ""
 	}
 	switch m.Recommendation {
 	case "NEEDS_INFO":

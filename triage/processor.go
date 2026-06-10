@@ -198,6 +198,9 @@ func (p *Processor) findBotComment(comments []jira.JiraComment) *jira.JiraCommen
 
 func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []string, meta *Metadata) {
 	outcome := meta.TriageOutcome(p.cfg.Triage.AutoFixThreshold)
+	if outcome == "" {
+		return
+	}
 
 	labelForOutcome := map[string]string{
 		"autofix":      p.cfg.Triage.AutoFixLabel,
@@ -206,9 +209,6 @@ func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []s
 	}
 
 	targetLabel := labelForOutcome[outcome]
-	if targetLabel == "" {
-		return
-	}
 
 	// All managed triage labels — we remove stale ones when outcome changes.
 	allLabels := []string{
@@ -218,7 +218,7 @@ func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []s
 	}
 
 	if p.cfg.DryRun {
-		if !containsLabel(currentLabels, targetLabel) {
+		if targetLabel != "" && !containsLabel(currentLabels, targetLabel) {
 			p.logger.Info("DRY RUN: would add triage label",
 				zap.String("issue", key),
 				zap.String("label", targetLabel),
@@ -234,8 +234,8 @@ func (p *Processor) syncLabel(ctx context.Context, key string, currentLabels []s
 		return
 	}
 
-	// Add the target label if not present.
-	if !containsLabel(currentLabels, targetLabel) {
+	// Add the target label if not present and not disabled.
+	if targetLabel != "" && !containsLabel(currentLabels, targetLabel) {
 		if err := p.jira.AddLabel(ctx, key, targetLabel); err != nil {
 			p.logger.Warn("Failed to add triage label",
 				zap.String("issue", key),

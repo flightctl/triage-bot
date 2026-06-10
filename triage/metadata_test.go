@@ -91,7 +91,7 @@ func TestTriageOutcome(t *testing.T) {
 		threshold int
 		want      string
 	}{
-		{name: "nil metadata", meta: nil, threshold: 60, want: "not_fixable"},
+		{name: "nil metadata", meta: nil, threshold: 60, want: ""},
 		{name: "NEEDS_INFO", meta: &Metadata{Recommendation: "NEEDS_INFO"}, threshold: 60, want: "missing_info"},
 		{name: "AUTO_FIX above threshold", meta: &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)}, threshold: 60, want: "autofix"},
 		{name: "AUTO_FIX at threshold", meta: &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(60)}, threshold: 60, want: "autofix"},

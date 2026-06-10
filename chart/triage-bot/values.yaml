@@ -129,6 +129,10 @@ config:
     workflow_path: /opt/workflows/triage
     auto_fix_label: "ai-autofix-candidate"
     auto_fix_threshold: 80
+    # -- Label applied when triage assessment is NEEDS_INFO (set to "" to disable)
+    missing_info_label: "triage-missing-info"
+    # -- Label applied when assessment is not AUTO_FIX or below threshold (set to "" to disable)
+    not_fixable_label: "triage-not-fixable"
     # -- Path to a custom task template file (overrides built-in task.tmpl)
     task_template_path: ""
     # -- Inline task template (overrides task_template_path). Go template
