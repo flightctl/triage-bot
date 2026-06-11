@@ -58,136 +58,94 @@ func newTestProcessor(mock *mockJiraClient) *Processor {
 }
 
 func likelihood(v int) *int { return &v }
+func strPtr(s string) *string { return &s }
 
-func TestSyncLabel_AutofixApplied(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)}
-
-	p.syncLabel(context.Background(), "TEST-1", nil, meta)
-
-	if len(mock.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d: %+v", len(mock.calls), mock.calls)
+func TestSyncLabel(t *testing.T) {
+	tests := []struct {
+		name             string
+		meta             *Metadata
+		existing         []string
+		dryRun           bool
+		missingInfoLabel *string // override; nil = use default
+		expectedCalls    []labelCall
+	}{
+		{
+			name:          "autofix applied",
+			meta:          &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)},
+			expectedCalls: []labelCall{{"add", "TEST-1", "ai-autofix-candidate"}},
+		},
+		{
+			name:          "missing info applied",
+			meta:          &Metadata{Recommendation: "NEEDS_INFO"},
+			expectedCalls: []labelCall{{"add", "TEST-1", "triage-missing-info"}},
+		},
+		{
+			name:          "not fixable applied",
+			meta:          &Metadata{Recommendation: "WONT_FIX"},
+			expectedCalls: []labelCall{{"add", "TEST-1", "triage-not-fixable"}},
+		},
+		{
+			name:     "stale label removed on re-triage",
+			meta:     &Metadata{Recommendation: "NEEDS_INFO"},
+			existing: []string{"ai-autofix-candidate"},
+			expectedCalls: []labelCall{
+				{"add", "TEST-1", "triage-missing-info"},
+				{"remove", "TEST-1", "ai-autofix-candidate"},
+			},
+		},
+		{
+			name:          "nil metadata is no-op",
+			meta:          nil,
+			existing:      []string{"ai-autofix-candidate"},
+			expectedCalls: nil,
+		},
+		{
+			name:          "idempotent when correct label present",
+			meta:          &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)},
+			existing:      []string{"ai-autofix-candidate"},
+			expectedCalls: nil,
+		},
+		{
+			name:             "disabled label still cleans up stale",
+			meta:             &Metadata{Recommendation: "NEEDS_INFO"},
+			existing:         []string{"ai-autofix-candidate"},
+			missingInfoLabel: strPtr(""),
+			expectedCalls:    []labelCall{{"remove", "TEST-1", "ai-autofix-candidate"}},
+		},
+		{
+			name:          "dry run makes no Jira calls",
+			meta:          &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)},
+			dryRun:        true,
+			expectedCalls: nil,
+		},
+		{
+			name:          "below threshold yields not-fixable",
+			meta:          &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(50)},
+			expectedCalls: []labelCall{{"add", "TEST-1", "triage-not-fixable"}},
+		},
 	}
-	if mock.calls[0] != (labelCall{"add", "TEST-1", "ai-autofix-candidate"}) {
-		t.Errorf("unexpected call: %+v", mock.calls[0])
-	}
-}
 
-func TestSyncLabel_MissingInfoApplied(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "NEEDS_INFO"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockJiraClient{}
+			p := newTestProcessor(mock)
+			if tt.dryRun {
+				p.cfg.DryRun = true
+			}
+			if tt.missingInfoLabel != nil {
+				p.cfg.Triage.MissingInfoLabel = *tt.missingInfoLabel
+			}
 
-	p.syncLabel(context.Background(), "TEST-1", nil, meta)
+			p.syncLabel(context.Background(), "TEST-1", tt.existing, tt.meta)
 
-	if len(mock.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d: %+v", len(mock.calls), mock.calls)
-	}
-	if mock.calls[0] != (labelCall{"add", "TEST-1", "triage-missing-info"}) {
-		t.Errorf("unexpected call: %+v", mock.calls[0])
-	}
-}
-
-func TestSyncLabel_NotFixableApplied(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "WONT_FIX"}
-
-	p.syncLabel(context.Background(), "TEST-1", nil, meta)
-
-	if len(mock.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d: %+v", len(mock.calls), mock.calls)
-	}
-	if mock.calls[0] != (labelCall{"add", "TEST-1", "triage-not-fixable"}) {
-		t.Errorf("unexpected call: %+v", mock.calls[0])
-	}
-}
-
-func TestSyncLabel_StaleLabelRemoved(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "NEEDS_INFO"}
-	existing := []string{"ai-autofix-candidate"}
-
-	p.syncLabel(context.Background(), "TEST-1", existing, meta)
-
-	if len(mock.calls) != 2 {
-		t.Fatalf("expected 2 calls (add + remove), got %d: %+v", len(mock.calls), mock.calls)
-	}
-	if mock.calls[0] != (labelCall{"add", "TEST-1", "triage-missing-info"}) {
-		t.Errorf("expected add missing-info, got: %+v", mock.calls[0])
-	}
-	if mock.calls[1] != (labelCall{"remove", "TEST-1", "ai-autofix-candidate"}) {
-		t.Errorf("expected remove autofix, got: %+v", mock.calls[1])
-	}
-}
-
-func TestSyncLabel_NilMetadata_NoOp(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-
-	p.syncLabel(context.Background(), "TEST-1", []string{"ai-autofix-candidate"}, nil)
-
-	if len(mock.calls) != 0 {
-		t.Fatalf("expected no calls for nil metadata, got %d: %+v", len(mock.calls), mock.calls)
-	}
-}
-
-func TestSyncLabel_Idempotent(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)}
-	existing := []string{"ai-autofix-candidate"}
-
-	p.syncLabel(context.Background(), "TEST-1", existing, meta)
-
-	if len(mock.calls) != 0 {
-		t.Fatalf("expected no calls when correct label exists, got %d: %+v", len(mock.calls), mock.calls)
-	}
-}
-
-func TestSyncLabel_DisabledLabel_StillCleansUp(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	p.cfg.Triage.MissingInfoLabel = ""
-	meta := &Metadata{Recommendation: "NEEDS_INFO"}
-	existing := []string{"ai-autofix-candidate"}
-
-	p.syncLabel(context.Background(), "TEST-1", existing, meta)
-
-	if len(mock.calls) != 1 {
-		t.Fatalf("expected 1 call (remove stale), got %d: %+v", len(mock.calls), mock.calls)
-	}
-	if mock.calls[0] != (labelCall{"remove", "TEST-1", "ai-autofix-candidate"}) {
-		t.Errorf("expected remove stale autofix label, got: %+v", mock.calls[0])
-	}
-}
-
-func TestSyncLabel_DryRun(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	p.cfg.DryRun = true
-	meta := &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(85)}
-
-	p.syncLabel(context.Background(), "TEST-1", nil, meta)
-
-	if len(mock.calls) != 0 {
-		t.Fatalf("expected no Jira calls in dry-run, got %d: %+v", len(mock.calls), mock.calls)
-	}
-}
-
-func TestSyncLabel_BelowThreshold_NotFixable(t *testing.T) {
-	mock := &mockJiraClient{}
-	p := newTestProcessor(mock)
-	meta := &Metadata{Recommendation: "AUTO_FIX", AutoFixLikelihood: likelihood(50)}
-
-	p.syncLabel(context.Background(), "TEST-1", nil, meta)
-
-	if len(mock.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d: %+v", len(mock.calls), mock.calls)
-	}
-	if mock.calls[0] != (labelCall{"add", "TEST-1", "triage-not-fixable"}) {
-		t.Errorf("expected not-fixable for below-threshold, got: %+v", mock.calls[0])
+			if len(mock.calls) != len(tt.expectedCalls) {
+				t.Fatalf("expected %d calls, got %d: %+v", len(tt.expectedCalls), len(mock.calls), mock.calls)
+			}
+			for i, want := range tt.expectedCalls {
+				if mock.calls[i] != want {
+					t.Errorf("call[%d] = %+v, want %+v", i, mock.calls[i], want)
+				}
+			}
+		})
 	}
 }
