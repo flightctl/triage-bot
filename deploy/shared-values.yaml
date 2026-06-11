@@ -40,6 +40,8 @@ config:
     workflow_path: /opt/workflows/triage
     auto_fix_label: "ai-autofix-candidate"
     auto_fix_threshold: 60
+    missing_info_label: "triage-missing-info"
+    not_fixable_label: "triage-not-fixable"
     import:
       repo: "https://github.com/flightctl/ai-workflows.git"
       path: "triage"

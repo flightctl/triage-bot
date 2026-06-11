@@ -66,6 +66,8 @@ type TriageConfig struct {
 	WorkflowPath     string       `mapstructure:"workflow_path"`
 	AutoFixLabel     string       `mapstructure:"auto_fix_label"`
 	AutoFixThreshold int          `mapstructure:"auto_fix_threshold"`
+	MissingInfoLabel string       `mapstructure:"missing_info_label"`
+	NotFixableLabel  string       `mapstructure:"not_fixable_label"`
 	TaskTemplatePath string       `mapstructure:"task_template_path"`
 	TaskTemplate     string       `mapstructure:"task_template"`
 	Import           ImportConfig `mapstructure:"import"`
@@ -102,6 +104,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("triage.workflow_path", "/opt/workflows/triage")
 	v.SetDefault("triage.auto_fix_label", "ai-autofix-candidate")
 	v.SetDefault("triage.auto_fix_threshold", 80)
+	v.SetDefault("triage.missing_info_label", "triage-missing-info")
+	v.SetDefault("triage.not_fixable_label", "triage-not-fixable")
 	v.SetDefault("triage.import.ref", "main")
 }
 
@@ -149,6 +153,8 @@ func LoadConfig(configPath string) (*Config, error) {
 	bindEnv("triage.workflow_path")
 	bindEnv("triage.auto_fix_label")
 	bindEnv("triage.auto_fix_threshold")
+	bindEnv("triage.missing_info_label")
+	bindEnv("triage.not_fixable_label")
 	bindEnv("triage.task_template_path")
 	bindEnv("triage.task_template")
 	bindEnv("triage.import.repo")
