@@ -192,7 +192,10 @@ func writeMCPConfig(cfg *config.Config, configPath string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	return os.WriteFile(configPath, data, 0o600)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(configPath, 0o600)
 }
 
 func populateIfEmpty(env map[string]string, key, value string) {

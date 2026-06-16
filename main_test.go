@@ -78,7 +78,10 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 			},
 		},
 	}
-	data, _ := json.Marshal(existing)
+	data, err := json.Marshal(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -92,9 +95,9 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 
 	var result map[string]any
@@ -109,7 +112,10 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 		t.Error("existing key migrationVersion was lost")
 	}
 
-	servers := result["mcpServers"].(map[string]any)
+	servers, ok := result["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("mcpServers key missing or wrong type")
+	}
 	if _, ok := servers["other-server"]; !ok {
 		t.Error("existing MCP server other-server was lost")
 	}
@@ -143,8 +149,18 @@ func TestWriteMCPConfig_ExplicitEnvWins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jira := result["mcpServers"].(map[string]any)["jira"].(map[string]any)
-	env := jira["env"].(map[string]any)
+	servers, ok := result["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("mcpServers key missing or wrong type")
+	}
+	jira, ok := servers["jira"].(map[string]any)
+	if !ok {
+		t.Fatal("jira server missing or wrong type")
+	}
+	env, ok := jira["env"].(map[string]any)
+	if !ok {
+		t.Fatal("env key missing or wrong type")
+	}
 
 	if env["ATLASSIAN_SITE_NAME"] != "explicit-site" {
 		t.Errorf("explicit env should win, got %v", env["ATLASSIAN_SITE_NAME"])
