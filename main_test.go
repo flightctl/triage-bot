@@ -62,6 +62,14 @@ func TestWriteMCPConfig_NewFile(t *testing.T) {
 	if env["ATLASSIAN_USER_EMAIL"] != "user@example.com" {
 		t.Errorf("ATLASSIAN_USER_EMAIL = %v", env["ATLASSIAN_USER_EMAIL"])
 	}
+
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config file mode = %o, want 600", got)
+	}
 }
 
 func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
@@ -82,7 +90,7 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,6 +129,14 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 	}
 	if _, ok := servers["jira"]; !ok {
 		t.Error("jira MCP server was not added")
+	}
+
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config file mode = %o, want 600", got)
 	}
 }
 
