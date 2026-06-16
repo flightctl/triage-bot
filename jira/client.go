@@ -95,7 +95,7 @@ func (c *Client) doOperation(ctx context.Context, method, url string, bodyReader
 		}
 
 		body, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
+		_ = resp.Body.Close() // body already fully read
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", readErr)
 		}

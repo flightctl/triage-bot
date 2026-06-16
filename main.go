@@ -33,7 +33,7 @@ func main() {
 	}
 
 	logger := initLogger(cfg.Logging)
-	defer func() { _ = logger.Sync() }()
+	defer func() { _ = logger.Sync() }() // zap documents Sync fails on stdout
 
 	logger.Info("Starting triage-bot",
 		zap.String("provider", cfg.AI.Provider),
