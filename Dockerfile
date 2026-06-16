@@ -16,7 +16,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates git nodejs npm bash
-RUN npm install -g @anthropic-ai/claude-code @aashari/mcp-server-atlassian-jira
+# claude-code intentionally unpinned — we want CLI updates (bug fixes, model support).
+# MCP server pinned — a version change broke config discovery (see setupMCPConfig).
+RUN npm install -g @anthropic-ai/claude-code @aashari/mcp-server-atlassian-jira@3.3.0
 
 # GID 0 (root group) for OCP restricted SCC compatibility.
 RUN adduser -u 1001 -G root -s /bin/sh -D appuser
