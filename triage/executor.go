@@ -79,9 +79,9 @@ func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string
 	if err := os.MkdirAll(outputBase, 0o755); err != nil {
 		return "", nil, fmt.Errorf("failed to create output dir: %w", err)
 	}
-	defer os.RemoveAll(workDir)
-	defer os.Remove(outputPath)
-	defer os.Remove(metadataPath)
+	defer func() { _ = os.RemoveAll(workDir) }()
+	defer func() { _ = os.Remove(outputPath) }()
+	defer func() { _ = os.Remove(metadataPath) }()
 
 	data := TemplateData{
 		IssueKey:     issueKey,

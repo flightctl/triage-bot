@@ -35,26 +35,26 @@ type JiraConfig struct {
 	SiteName        string   `mapstructure:"site_name"`
 	Username        string   `mapstructure:"username"`
 	APIToken        string   `mapstructure:"api_token"`
-	BotUsername      string   `mapstructure:"bot_username"`
+	BotUsername     string   `mapstructure:"bot_username"`
 	IntervalSeconds int      `mapstructure:"interval_seconds"`
 	ProjectKeys     []string `mapstructure:"project_keys"`
 	MaxResults      int      `mapstructure:"max_results"`
 }
 
 type AIConfig struct {
-	Provider     string       `mapstructure:"provider"`
-	Model        string       `mapstructure:"model"`
-	MaxConcurrent int         `mapstructure:"max_concurrent"`
-	TimeoutMinutes int        `mapstructure:"timeout_minutes"`
-	Claude       ClaudeConfig `mapstructure:"claude"`
-	Gemini       GeminiConfig `mapstructure:"gemini"`
-	AllowedTools string       `mapstructure:"allowed_tools"`
+	Provider       string       `mapstructure:"provider"`
+	Model          string       `mapstructure:"model"`
+	MaxConcurrent  int          `mapstructure:"max_concurrent"`
+	TimeoutMinutes int          `mapstructure:"timeout_minutes"`
+	Claude         ClaudeConfig `mapstructure:"claude"`
+	Gemini         GeminiConfig `mapstructure:"gemini"`
+	AllowedTools   string       `mapstructure:"allowed_tools"`
 }
 
 type ClaudeConfig struct {
-	APIKey               string `mapstructure:"api_key"`
-	VertexProjectID      string `mapstructure:"vertex_project_id"`
-	VertexRegion         string `mapstructure:"vertex_region"`
+	APIKey                string `mapstructure:"api_key"`
+	VertexProjectID       string `mapstructure:"vertex_project_id"`
+	VertexRegion          string `mapstructure:"vertex_region"`
 	VertexCredentialsFile string `mapstructure:"vertex_credentials_file"`
 }
 

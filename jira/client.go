@@ -19,25 +19,25 @@ import (
 )
 
 const (
-	maxAttempts             = 2
-	maxRetryWaitSeconds     = 60
-	initialBackoffSeconds   = 1
-	maxBackoffSeconds       = 16
-	maxJitterSeconds        = 1.0
-	maxBodyErrorLength      = 200
+	maxAttempts           = 2
+	maxRetryWaitSeconds   = 60
+	initialBackoffSeconds = 1
+	maxBackoffSeconds     = 16
+	maxJitterSeconds      = 1.0
+	maxBodyErrorLength    = 200
 )
 
 var (
-	validIssueKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
+	validIssueKey  = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
 	validCommentID = regexp.MustCompile(`^\d+$`)
 )
 
 type Client struct {
-	baseURL  string
+	baseURL    string
 	authHeader string
-	client   *http.Client
-	logger   *zap.Logger
-	sleepFn  func(time.Duration) <-chan time.Time
+	client     *http.Client
+	logger     *zap.Logger
+	sleepFn    func(time.Duration) <-chan time.Time
 }
 
 func NewClient(baseURL, username, apiToken string, logger *zap.Logger) *Client {
@@ -58,7 +58,6 @@ func newClient(baseURL, username, apiToken string, httpClient *http.Client, logg
 		sleepFn:    sleepFn,
 	}
 }
-
 
 func (c *Client) doOperation(ctx context.Context, method, url string, bodyReader io.Reader, okStatusCodes ...int) ([]byte, error) {
 	c.logger.Debug("Jira API request", zap.String("method", method), zap.String("url", url))
@@ -96,7 +95,7 @@ func (c *Client) doOperation(ctx context.Context, method, url string, bodyReader
 		}
 
 		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read response body: %w", readErr)
 		}

@@ -33,7 +33,7 @@ func TestDoOperation_RetriesOn429(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"ok":true}`)
+		_, _ = fmt.Fprint(w, `{"ok":true}`)
 	}))
 	defer srv.Close()
 
@@ -59,7 +59,7 @@ func TestDoOperation_RetriesOn503(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `ok`)
+		_, _ = fmt.Fprint(w, `ok`)
 	}))
 	defer srv.Close()
 
@@ -78,7 +78,7 @@ func TestDoOperation_NoRetryOn400(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, "bad request")
+		_, _ = fmt.Fprint(w, "bad request")
 	}))
 	defer srv.Close()
 
@@ -155,9 +155,9 @@ func TestValidateCommentID(t *testing.T) {
 func TestGetComments_Paginates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("startAt") == "0" || r.URL.Query().Get("startAt") == "" {
-			fmt.Fprint(w, `{"comments":[{"id":"1","body":"first"}],"maxResults":1,"total":2,"startAt":0}`)
+			_, _ = fmt.Fprint(w, `{"comments":[{"id":"1","body":"first"}],"maxResults":1,"total":2,"startAt":0}`)
 		} else {
-			fmt.Fprint(w, `{"comments":[{"id":"2","body":"second"}],"maxResults":1,"total":2,"startAt":1}`)
+			_, _ = fmt.Fprint(w, `{"comments":[{"id":"2","body":"second"}],"maxResults":1,"total":2,"startAt":1}`)
 		}
 	}))
 	defer srv.Close()

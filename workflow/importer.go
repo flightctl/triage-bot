@@ -65,8 +65,8 @@ func (i *Importer) cloneFull(ref string) error {
 
 func (i *Importer) cloneSparse(ref string) error {
 	tmpDir := i.cfg.Dest + ".tmp"
-	os.RemoveAll(tmpDir)
-	defer os.RemoveAll(tmpDir)
+	_ = os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	clone := exec.Command("git", "clone", "--depth", "1", "--branch", ref,
 		"--filter=blob:none", "--sparse", "--", i.cfg.Repo, tmpDir)

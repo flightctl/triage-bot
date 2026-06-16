@@ -1,0 +1,102 @@
+name: "Code Quality"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
+        with:
+          files_ignore: |
+            docs/**
+            .github/**
+            *.md
+            LICENSE
+            chart/**
+            deploy/**
+
+      - name: Set up Go
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Running Linter
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
+        with:
+          version: v2.1.0
+
+      - name: Check that go.mod is tidy
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: |
+          make tidy
+          git diff --exit-code go.mod go.sum
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
+        with:
+          files: |
+            chart/**
+            deploy/**
+
+      - name: Set up Helm
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+
+      - name: Lint Helm chart
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: make helm-lint
+
+  docs-lint:
+    name: Docs Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@ed68ef82c095e0d48ec87eccea555d944a631a4c # v46
+        with:
+          files: |
+            **/*.md
+
+      - name: Install markdownlint-cli2
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: npm install -g markdownlint-cli2@0.20.0
+
+      - name: Lint markdown
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        run: make docs-lint-ci
