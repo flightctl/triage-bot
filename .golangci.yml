@@ -1,0 +1,85 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+output:
+  formats:
+    text:
+      print-issued-lines: true
+      print-linter-name: true
+
+issues:
+  uniq-by-line: true
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(triage-bot)
+
+linters:
+  enable:
+    - copyloopvar
+    - errcheck
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nolintlint
+    - staticcheck
+    - unconvert
+    - unused
+
+  settings:
+    govet:
+      enable:
+        - shadow
+      settings:
+        printf:
+          funcs:
+            - (go.uber.org/zap.SugaredLogger).Infof
+            - (go.uber.org/zap.SugaredLogger).Warnf
+            - (go.uber.org/zap.SugaredLogger).Errorf
+            - (go.uber.org/zap.SugaredLogger).Fatalf
+
+    gocyclo:
+      min-complexity: 35
+
+  exclusions:
+    paths:
+      - bin
+
+    rules:
+      - path: '(.+)\.go$'
+        text: 'declaration of "err" shadows declaration at'
+      - path: '_test\.go$'
+        linters:
+          - gosec
+        text: 'G101'
+      - path: 'triage/(executor|metadata)\.go$'
+        linters:
+          - gosec
+        text: 'G304'
+      - path: '(triage/executor|workflow/importer)\.go$'
+        linters:
+          - gosec
+        text: 'G301'
+      - path: '(triage/executor|workflow/importer)\.go$'
+        linters:
+          - gosec
+        text: 'G204'
+      - path: '(triage/executor|_test)\.go$'
+        linters:
+          - gosec
+        text: 'G306'

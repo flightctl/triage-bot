@@ -19,7 +19,7 @@ func NewServer(port int, webhook *WebhookHandler, logger *zap.Logger) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		_, _ = fmt.Fprint(w, "OK") // best-effort after WriteHeader
 	})
 	if webhook != nil {
 		mux.Handle("/webhook", webhook)

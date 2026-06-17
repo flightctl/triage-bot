@@ -3,7 +3,7 @@ TAG        := latest
 REGISTRY   ?=
 CONTAINER_TOOL := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-.PHONY: build push unit-test fmt lint docs-lint helm-lint tidy help
+.PHONY: build push unit-test fmt lint docs-lint docs-lint-ci helm-lint tidy help
 
 help:
 	@echo "Available targets:"
@@ -12,7 +12,8 @@ help:
 	@echo "  unit-test  - Run unit tests with race detector"
 	@echo "  fmt        - Auto-format code"
 	@echo "  lint       - Run golangci-lint"
-	@echo "  docs-lint  - Lint and fix markdown files"
+	@echo "  docs-lint     - Lint and fix markdown files"
+	@echo "  docs-lint-ci  - Lint markdown files (no auto-fix, for CI)"
 	@echo "  helm-lint  - Lint Helm chart"
 	@echo "  tidy       - Run go mod tidy"
 
@@ -42,7 +43,11 @@ lint:
 
 docs-lint:
 	@echo "Linting markdown files..."
-	markdownlint-cli2 --fix "**/*.md" "!**/AGENTS.md" "!**/CLAUDE.md"
+	markdownlint-cli2 --fix "**/*.md" "!**/AGENTS.md" "!**/CLAUDE.md" "!.claude/**" "!.review/**"
+
+docs-lint-ci:
+	@echo "Linting markdown files (CI mode, no auto-fix)..."
+	markdownlint-cli2 "**/*.md" "!**/AGENTS.md" "!**/CLAUDE.md" "!.claude/**" "!.review/**"
 
 helm-lint:
 	@echo "Linting Helm chart..."
