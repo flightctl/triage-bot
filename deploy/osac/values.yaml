@@ -12,3 +12,6 @@ config:
   ai:
     claude:
       vertex_project_id: "itpc-gcp-eco-eng-claude"
+
+  triage:
+    auto_fix_label: "jira-autofix"

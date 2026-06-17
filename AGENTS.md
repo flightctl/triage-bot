@@ -65,7 +65,7 @@ The **Go bot** handles the control plane (poll for bugs, check comment state, po
 
 ### MCP Configuration
 
-`setupMCPConfig()` in `main.go` writes `~/.claude/settings.json` at startup with the Jira MCP server. Common env vars (`ATLASSIAN_SITE_NAME`, `ATLASSIAN_USER_EMAIL`, `ATLASSIAN_API_TOKEN`) are auto-populated from the bot's Jira config. The default MCP server is `@aashari/mcp-server-atlassian-jira` (pre-installed in the container image).
+`setupMCPConfig()` in `main.go` merges the Jira MCP server entry into `~/.claude.json` at startup (the file Claude Code reads for user-scoped MCP servers). Common env vars (`ATLASSIAN_SITE_NAME`, `ATLASSIAN_USER_EMAIL`, `ATLASSIAN_API_TOKEN`) are auto-populated from the bot's Jira config. The default MCP server is `@aashari/mcp-server-atlassian-jira` (pre-installed in the container image).
 
 ### OCP Deployment Model
 
@@ -301,4 +301,5 @@ Adapted from jira-ai-issue-solver (`services/jira.go`). Key differences from the
 - **Hash extraction**: The `extractHash()` function looks for the _last_ occurrence of the marker. If the assessment text itself contains the marker string, the hash will still be correctly extracted from the footer.
 - **Webhook without secret**: If `server.webhook_secret` is empty, the webhook handler is nil and the `/webhook` route is not registered. The OCP Route is also not created. This is intentional — never expose an unauthenticated webhook endpoint.
 - **Polling + webhook overlap**: Safe by design. The processor's hash check is the deduplication mechanism. If both trigger for the same issue, the second one sees matching hashes and skips.
+- **MCP config location**: `setupMCPConfig()` writes to `~/.claude.json` (NOT `~/.claude/settings.json`). Claude Code reads user-scoped MCP servers from `~/.claude.json`. The function merges into the existing file to preserve other Claude Code state (migrations, preferences).
 - **MCP env var auto-population**: `setupMCPConfig()` populates common env vars (ATLASSIAN_SITE_NAME, ATLASSIAN_USER_EMAIL, ATLASSIAN_API_TOKEN) from the bot's Jira config only when the MCP env map doesn't already set them. Explicit MCP env values always win.

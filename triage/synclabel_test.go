@@ -57,7 +57,7 @@ func newTestProcessor(mock *mockJiraClient) *Processor {
 	}
 }
 
-func likelihood(v int) *int { return &v }
+func likelihood(v int) *int   { return &v }
 func strPtr(s string) *string { return &s }
 
 func TestSyncLabel(t *testing.T) {

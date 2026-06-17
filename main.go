@@ -129,36 +129,12 @@ func initLogger(cfg config.LoggingConfig) *zap.Logger {
 	return logger
 }
 
-// setupMCPConfig writes a Claude Code settings.json with the Jira MCP
-// server configured. This lets the AI CLI access Jira via MCP during
-// triage assessments.
+// setupMCPConfig merges MCP server config into ~/.claude.json so the
+// Claude Code CLI can discover Jira tools during triage assessments.
 func setupMCPConfig(cfg *config.Config, logger *zap.Logger) error {
 	if cfg.MCP.Jira.Command == "" {
-		logger.Info("No MCP Jira server configured, skipping settings.json generation")
+		logger.Info("No MCP Jira server configured, skipping MCP setup")
 		return nil
-	}
-
-	env := make(map[string]string)
-	for k, v := range cfg.MCP.Jira.Env {
-		env[k] = v
-	}
-
-	// Auto-populate common MCP server env vars from the bot's Jira config
-	// when the user hasn't set them explicitly.
-	populateIfEmpty(env, "ATLASSIAN_SITE_NAME", cfg.Jira.SiteName)
-	populateIfEmpty(env, "ATLASSIAN_USER_EMAIL", cfg.Jira.Username)
-	populateIfEmpty(env, "ATLASSIAN_API_TOKEN", cfg.Jira.APIToken)
-	populateIfEmpty(env, "JIRA_BASE_URL", cfg.Jira.BaseURL)
-	populateIfEmpty(env, "JIRA_API_TOKEN", cfg.Jira.APIToken)
-
-	settings := map[string]any{
-		"mcpServers": map[string]any{
-			"jira": map[string]any{
-				"command": cfg.MCP.Jira.Command,
-				"args":    cfg.MCP.Jira.Args,
-				"env":     env,
-			},
-		},
 	}
 
 	home, err := os.UserHomeDir()
@@ -166,23 +142,60 @@ func setupMCPConfig(cfg *config.Config, logger *zap.Logger) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	settingsDir := filepath.Join(home, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o700); err != nil {
-		return fmt.Errorf("failed to create .claude directory: %w", err)
+	configPath := filepath.Join(home, ".claude.json")
+	if err := writeMCPConfig(cfg, configPath); err != nil {
+		return err
 	}
 
-	settingsPath := filepath.Join(settingsDir, "settings.json")
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal settings: %w", err)
-	}
-
-	if err := os.WriteFile(settingsPath, data, 0o600); err != nil {
-		return fmt.Errorf("failed to write settings.json: %w", err)
-	}
-
-	logger.Info("Wrote Claude Code MCP settings", zap.String("path", settingsPath))
+	logger.Info("Wrote Claude Code MCP settings", zap.String("path", configPath))
 	return nil
+}
+
+// writeMCPConfig merges the Jira MCP server entry into the Claude Code
+// config file at configPath, preserving any existing keys.
+// Must be called before any CLI subprocesses are spawned (non-atomic
+// read-modify-write is safe only at startup).
+func writeMCPConfig(cfg *config.Config, configPath string) error {
+	env := make(map[string]string)
+	for k, v := range cfg.MCP.Jira.Env {
+		env[k] = v
+	}
+
+	populateIfEmpty(env, "ATLASSIAN_SITE_NAME", cfg.Jira.SiteName)
+	populateIfEmpty(env, "ATLASSIAN_USER_EMAIL", cfg.Jira.Username)
+	populateIfEmpty(env, "ATLASSIAN_API_TOKEN", cfg.Jira.APIToken)
+
+	existing := make(map[string]any)
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &existing); err != nil {
+			return fmt.Errorf("failed to parse existing %s: %w", configPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read existing %s: %w", configPath, err)
+	}
+
+	mcpServers, _ := existing["mcpServers"].(map[string]any)
+	if mcpServers == nil {
+		mcpServers = make(map[string]any)
+	}
+
+	mcpServers["jira"] = map[string]any{
+		"type":    "stdio",
+		"command": cfg.MCP.Jira.Command,
+		"args":    cfg.MCP.Jira.Args,
+		"env":     env,
+	}
+	existing["mcpServers"] = mcpServers
+
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(configPath, 0o600)
 }
 
 func populateIfEmpty(env map[string]string, key, value string) {
