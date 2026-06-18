@@ -65,6 +65,7 @@ func (s *Scanner) run(ctx context.Context) {
 	defer close(s.done)
 
 	s.scan(ctx)
+	s.scanStale(ctx)
 
 	interval := time.Duration(s.cfg.Jira.IntervalSeconds) * time.Second
 	ticker := time.NewTicker(interval)
@@ -77,6 +78,7 @@ func (s *Scanner) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.scan(ctx)
+			s.scanStale(ctx)
 		}
 	}
 }
@@ -136,6 +138,98 @@ func (s *Scanner) scan(ctx context.Context) {
 	}
 
 	wg.Wait()
+}
+
+func (s *Scanner) scanStale(ctx context.Context) {
+	staleLabel := s.cfg.Triage.StaleLabel
+	if staleLabel == "" {
+		return
+	}
+
+	autofixLabel := s.cfg.Triage.AutoFixLabel
+	if autofixLabel == "" {
+		return
+	}
+
+	if len(s.cfg.Triage.ProgressionLabels) == 0 {
+		s.logger.Warn("Stale label configured but progression_labels is empty, skipping stale scan")
+		return
+	}
+
+	jql := s.buildStaleJQL()
+	s.logger.Info("Scanning for stale issues", zap.String("jql", jql))
+
+	var allIssues []jira.JiraIssue
+	nextPageToken := ""
+	for {
+		result, err := s.jiraClient.SearchTickets(ctx, jql, s.cfg.Jira.MaxResults, nextPageToken)
+		if err != nil {
+			s.logger.Error("Failed to search Jira for stale issues", zap.Error(err))
+			return
+		}
+		allIssues = append(allIssues, result.Issues...)
+		if result.IsLast || result.NextPageToken == "" {
+			break
+		}
+		nextPageToken = result.NextPageToken
+	}
+
+	if len(allIssues) == 0 {
+		return
+	}
+
+	s.logger.Info("Found stale issues", zap.Int("count", len(allIssues)))
+
+	for _, issue := range allIssues {
+		if ctx.Err() != nil {
+			break
+		}
+
+		if s.cfg.DryRun {
+			s.logger.Info("DRY RUN: would mark stale",
+				zap.String("issue", issue.Key),
+				zap.String("add", staleLabel),
+				zap.String("remove", autofixLabel))
+			continue
+		}
+
+		if err := s.jiraClient.AddLabel(ctx, issue.Key, staleLabel); err != nil {
+			s.logger.Error("Failed to add stale label",
+				zap.String("issue", issue.Key),
+				zap.Error(err))
+			continue
+		}
+		if err := s.jiraClient.RemoveLabel(ctx, issue.Key, autofixLabel); err != nil {
+			s.logger.Error("Failed to remove autofix label from stale issue",
+				zap.String("issue", issue.Key),
+				zap.Error(err))
+		}
+		s.logger.Info("Marked issue as stale",
+			zap.String("issue", issue.Key))
+	}
+}
+
+func (s *Scanner) buildStaleJQL() string {
+	projects := make([]string, len(s.cfg.Jira.ProjectKeys))
+	for i, k := range s.cfg.Jira.ProjectKeys {
+		projects[i] = fmt.Sprintf("%q", k)
+	}
+
+	autofixLabel := s.cfg.Triage.AutoFixLabel
+	staleLabel := s.cfg.Triage.StaleLabel
+
+	allExcluded := append(s.cfg.Triage.ProgressionLabels, staleLabel)
+	quoted := make([]string, len(allExcluded))
+	for i, l := range allExcluded {
+		quoted[i] = fmt.Sprintf("%q", l)
+	}
+
+	return fmt.Sprintf(
+		"project IN (%s) AND issuetype = Bug AND statusCategory = Done AND labels = %q AND labels NOT IN (%s) ORDER BY key ASC",
+		strings.Join(projects, ", "),
+		autofixLabel,
+		strings.Join(quoted, ", "),
+	)
 }
 
 func (s *Scanner) buildJQL() string {

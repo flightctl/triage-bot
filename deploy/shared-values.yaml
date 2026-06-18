@@ -42,6 +42,8 @@ config:
     auto_fix_threshold: 60
     missing_info_label: "triage-missing-info"
     not_fixable_label: "triage-not-fixable"
+    stale_label: ""
+    progression_labels: []
     import:
       repo: "https://github.com/flightctl/ai-workflows.git"
       path: "triage"
