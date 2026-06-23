@@ -8,6 +8,8 @@ config:
     username: "osac-automation@redhat.com"
     project_keys:
       - OSAC
+    excluded_components:
+      - "Enclave"
 
   ai:
     claude:

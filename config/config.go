@@ -31,14 +31,15 @@ type LoggingConfig struct {
 }
 
 type JiraConfig struct {
-	BaseURL         string   `mapstructure:"base_url"`
-	SiteName        string   `mapstructure:"site_name"`
-	Username        string   `mapstructure:"username"`
-	APIToken        string   `mapstructure:"api_token"`
-	BotUsername     string   `mapstructure:"bot_username"`
-	IntervalSeconds int      `mapstructure:"interval_seconds"`
-	ProjectKeys     []string `mapstructure:"project_keys"`
-	MaxResults      int      `mapstructure:"max_results"`
+	BaseURL            string   `mapstructure:"base_url"`
+	SiteName           string   `mapstructure:"site_name"`
+	Username           string   `mapstructure:"username"`
+	APIToken           string   `mapstructure:"api_token"`
+	BotUsername        string   `mapstructure:"bot_username"`
+	IntervalSeconds    int      `mapstructure:"interval_seconds"`
+	ProjectKeys        []string `mapstructure:"project_keys"`
+	MaxResults         int      `mapstructure:"max_results"`
+	ExcludedComponents []string `mapstructure:"excluded_components"`
 }
 
 type AIConfig struct {
@@ -138,6 +139,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	bindEnv("jira.bot_username")
 	bindEnv("jira.interval_seconds")
 	bindEnv("jira.max_results")
+	bindEnv("jira.excluded_components")
 
 	bindEnv("ai.provider")
 	bindEnv("ai.model")

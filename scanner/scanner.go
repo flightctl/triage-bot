@@ -144,10 +144,21 @@ func (s *Scanner) buildJQL() string {
 		projects[i] = fmt.Sprintf("%q", k)
 	}
 
-	return fmt.Sprintf(
-		"project IN (%s) AND issuetype = Bug AND statusCategory != Done ORDER BY key ASC",
+	jql := fmt.Sprintf(
+		"project IN (%s) AND issuetype = Bug AND statusCategory != Done",
 		strings.Join(projects, ", "),
 	)
+
+	if len(s.cfg.Jira.ExcludedComponents) > 0 {
+		comps := make([]string, len(s.cfg.Jira.ExcludedComponents))
+		for i, c := range s.cfg.Jira.ExcludedComponents {
+			comps[i] = fmt.Sprintf("%q", c)
+		}
+		jql += fmt.Sprintf(" AND component NOT IN (%s)", strings.Join(comps, ", "))
+	}
+
+	jql += " ORDER BY key ASC"
+	return jql
 }
 
 // Verify Processor implements IssueProcessor at compile time.
