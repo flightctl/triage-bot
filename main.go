@@ -166,7 +166,7 @@ func writeMCPConfig(cfg *config.Config, configPath string) error {
 	populateIfEmpty(env, "ATLASSIAN_API_TOKEN", cfg.Jira.APIToken)
 
 	existing := make(map[string]any)
-	if data, err := os.ReadFile(configPath); err == nil {
+	if data, err := os.ReadFile(filepath.Clean(configPath)); err == nil {
 		if err := json.Unmarshal(data, &existing); err != nil {
 			return fmt.Errorf("failed to parse existing %s: %w", configPath, err)
 		}
