@@ -111,6 +111,8 @@ config:
     interval_seconds: 300
     project_keys: []
     max_results: 100
+    # -- Component names to exclude from the triage scan JQL
+    excluded_components: []
 
   ai:
     provider: claude
