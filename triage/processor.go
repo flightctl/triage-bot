@@ -280,6 +280,27 @@ func containsLabel(labels []string, target string) bool {
 	return false
 }
 
+// trimInvisible strips BOM (U+FEFF) and other zero-width / invisible
+// characters that LLM tool chains may emit but that break json.Unmarshal.
+func trimInvisible(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		if r <= ' ' {
+			return true // ASCII control chars + space (superset of TrimSpace)
+		}
+		switch r {
+		case '\u00A0', // no-break space
+			'\uFEFF', // BOM / zero-width no-break space
+			'\u200B', // zero-width space
+			'\u200C', // zero-width non-joiner
+			'\u200D', // zero-width joiner
+			'\u2060', // word joiner
+			'\uFFFE': // byte-order mark (swapped)
+			return true
+		}
+		return false
+	})
+}
+
 // stripCodeFences removes a single layer of markdown code fences
 // (``` or ```json etc.) that LLMs commonly wrap around JSON output.
 func stripCodeFences(s string) string {
@@ -303,7 +324,7 @@ func stripCodeFences(s string) string {
 // error so the caller can fall back to plain text.
 func buildADFComment(assessment, hash string) (map[string]any, error) {
 	var adf map[string]any
-	if err := json.Unmarshal([]byte(stripCodeFences(assessment)), &adf); err != nil {
+	if err := json.Unmarshal([]byte(trimInvisible(stripCodeFences(assessment))), &adf); err != nil {
 		return nil, fmt.Errorf("invalid ADF JSON: %w", err)
 	}
 
