@@ -115,17 +115,14 @@ func (p *Processor) postComment(ctx context.Context, key string, action Action, 
 	}
 
 	if p.cfg.DryRun {
-		if adfErr == nil {
-			p.logger.Info("DRY RUN: would post triage comment",
-				zap.String("issue", key),
-				zap.String("action", action.String()),
-				zap.Any("adf", adfBody))
-		} else {
-			p.logger.Info("DRY RUN: would post triage comment (plain text)",
-				zap.String("issue", key),
-				zap.String("action", action.String()),
-				zap.String("comment", appendHashFooter(assessment, descHash)))
+		format := "adf"
+		if adfErr != nil {
+			format = "plain text"
 		}
+		p.logger.Info("DRY RUN: would post triage comment",
+			zap.String("issue", key),
+			zap.String("action", action.String()),
+			zap.String("format", format))
 		return nil
 	}
 
