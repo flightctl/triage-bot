@@ -188,6 +188,52 @@ func TestBuildADFComment_MissingDocType(t *testing.T) {
 	}
 }
 
+func TestStripCodeFences(t *testing.T) {
+	raw := `{"type":"doc"}`
+
+	// ADF containing a codeBlock with triple backticks inside the text.
+	embeddedJSON := `{"type":"doc","content":[{"type":"codeBlock","content":[{"type":"text","text":"` +
+		"```go\nfmt.Println()\n```" +
+		`"}]}]}`
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no fences", raw, raw},
+		{"bare fences", "```\n" + raw + "\n```", raw},
+		{"json tag", "```json\n" + raw + "\n```", raw},
+		{"adf tag", "```adf\n" + raw + "\n```", raw},
+		{"surrounding whitespace", "  ```json\n" + raw + "\n```  ", raw},
+		{"trailing newline after close", "```json\n" + raw + "\n```\n", raw},
+		{"no closing fence", "```json\n" + raw, "```json\n" + raw},
+		{"embedded backticks", "```json\n" + embeddedJSON + "\n```", embeddedJSON},
+		{"crlf line endings", "```json\r\n" + raw + "\r\n```", raw},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripCodeFences(tt.input)
+			if got != tt.want {
+				t.Errorf("stripCodeFences() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildADFComment_Fenced(t *testing.T) {
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	fenced := "```json\n" + adf + "\n```"
+	result, err := buildADFComment(fenced, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for fenced JSON: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
+	}
+}
+
 func TestADFHashRoundtrip(t *testing.T) {
 	assessment := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
 	hash := "abc123def456"

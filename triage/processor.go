@@ -280,12 +280,30 @@ func containsLabel(labels []string, target string) bool {
 	return false
 }
 
+// stripCodeFences removes a single layer of markdown code fences
+// (``` or ```json etc.) that LLMs commonly wrap around JSON output.
+func stripCodeFences(s string) string {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "```") {
+		return s
+	}
+	first := strings.IndexByte(s, '\n')
+	if first < 0 {
+		return s
+	}
+	last := strings.LastIndex(s, "```")
+	if last <= first {
+		return s
+	}
+	return strings.TrimSpace(s[first+1 : last])
+}
+
 // buildADFComment parses the AI's ADF JSON output and appends the
 // description hash footer as ADF nodes. If parsing fails, returns an
 // error so the caller can fall back to plain text.
 func buildADFComment(assessment, hash string) (map[string]any, error) {
 	var adf map[string]any
-	if err := json.Unmarshal([]byte(assessment), &adf); err != nil {
+	if err := json.Unmarshal([]byte(stripCodeFences(assessment)), &adf); err != nil {
 		return nil, fmt.Errorf("invalid ADF JSON: %w", err)
 	}
 
