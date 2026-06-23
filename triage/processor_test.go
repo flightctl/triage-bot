@@ -283,6 +283,18 @@ func TestBuildADFComment_Fenced(t *testing.T) {
 	}
 }
 
+func TestBuildADFComment_BOMBeforeFence(t *testing.T) {
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	input := "\uFEFF```json\n" + adf + "\n```"
+	result, err := buildADFComment(input, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for BOM-prefixed fenced JSON: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
+	}
+}
+
 func TestADFHashRoundtrip(t *testing.T) {
 	assessment := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
 	hash := "abc123def456"

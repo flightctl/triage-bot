@@ -320,8 +320,12 @@ func stripCodeFences(s string) string {
 // description hash footer as ADF nodes. If parsing fails, returns an
 // error so the caller can fall back to plain text.
 func buildADFComment(assessment, hash string) (map[string]any, error) {
+	cleaned := trimInvisible(assessment)
+	cleaned = stripCodeFences(cleaned)
+	cleaned = trimInvisible(cleaned)
+
 	var adf map[string]any
-	if err := json.Unmarshal([]byte(trimInvisible(stripCodeFences(assessment))), &adf); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &adf); err != nil {
 		return nil, fmt.Errorf("invalid ADF JSON: %w", err)
 	}
 
