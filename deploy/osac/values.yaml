@@ -19,3 +19,10 @@ config:
     auto_fix_label: "jira-autofix"
     missing_info_label: "jira-triage-missing-info"
     not_fixable_label: "jira-triage-not-fixable"
+    stale_label: "jira-triage-stale"
+    progression_labels:
+      - "jira-autofix-merged"
+      - "jira-autofix-review"
+      - "jira-autofix-ci-failing"
+      - "jira-autofix-rejected"
+      - "jira-autofix-blocked"
