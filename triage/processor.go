@@ -115,17 +115,14 @@ func (p *Processor) postComment(ctx context.Context, key string, action Action, 
 	}
 
 	if p.cfg.DryRun {
-		if adfErr == nil {
-			p.logger.Info("DRY RUN: would post triage comment",
-				zap.String("issue", key),
-				zap.String("action", action.String()),
-				zap.Any("adf", adfBody))
-		} else {
-			p.logger.Info("DRY RUN: would post triage comment (plain text)",
-				zap.String("issue", key),
-				zap.String("action", action.String()),
-				zap.String("comment", appendHashFooter(assessment, descHash)))
+		format := "adf"
+		if adfErr != nil {
+			format = "plain text"
 		}
+		p.logger.Info("DRY RUN: would post triage comment",
+			zap.String("issue", key),
+			zap.String("action", action.String()),
+			zap.String("format", format))
 		return nil
 	}
 
@@ -280,12 +277,55 @@ func containsLabel(labels []string, target string) bool {
 	return false
 }
 
+// trimInvisible strips BOM (U+FEFF) and other zero-width / invisible
+// characters that LLM tool chains may emit but that break json.Unmarshal.
+func trimInvisible(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		if r <= ' ' {
+			return true // ASCII control chars + space (superset of TrimSpace)
+		}
+		switch r {
+		case '\u00A0', // no-break space
+			'\uFEFF', // BOM / zero-width no-break space
+			'\u200B', // zero-width space
+			'\u200C', // zero-width non-joiner
+			'\u200D', // zero-width joiner
+			'\u2060', // word joiner
+			'\uFFFE': // byte-order mark (swapped)
+			return true
+		}
+		return false
+	})
+}
+
+// stripCodeFences removes a single layer of markdown code fences
+// (``` or ```json etc.) that LLMs commonly wrap around JSON output.
+func stripCodeFences(s string) string {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "```") {
+		return s
+	}
+	first := strings.IndexByte(s, '\n')
+	if first < 0 {
+		return s
+	}
+	last := strings.LastIndex(s, "```")
+	if last <= first {
+		return s
+	}
+	return strings.TrimSpace(s[first+1 : last])
+}
+
 // buildADFComment parses the AI's ADF JSON output and appends the
 // description hash footer as ADF nodes. If parsing fails, returns an
 // error so the caller can fall back to plain text.
 func buildADFComment(assessment, hash string) (map[string]any, error) {
+	cleaned := trimInvisible(assessment)
+	cleaned = stripCodeFences(cleaned)
+	cleaned = trimInvisible(cleaned)
+
 	var adf map[string]any
-	if err := json.Unmarshal([]byte(assessment), &adf); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &adf); err != nil {
 		return nil, fmt.Errorf("invalid ADF JSON: %w", err)
 	}
 

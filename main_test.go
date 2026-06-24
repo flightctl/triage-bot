@@ -25,7 +25,7 @@ func TestWriteMCPConfig_NewFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(filepath.Clean(configPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWriteMCPConfig_MergesExistingKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, readErr := os.ReadFile(configPath)
+	data, readErr := os.ReadFile(filepath.Clean(configPath))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
@@ -156,7 +156,7 @@ func TestWriteMCPConfig_ExplicitEnvWins(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, readErr := os.ReadFile(configPath)
+	data, readErr := os.ReadFile(filepath.Clean(configPath))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}

@@ -188,6 +188,113 @@ func TestBuildADFComment_MissingDocType(t *testing.T) {
 	}
 }
 
+func TestTrimInvisible(t *testing.T) {
+	raw := `{"type":"doc"}`
+
+	bom := "\uFEFF"
+	zws := "\u200B"
+	zwnj := "\u200C"
+	zwj := "\u200D"
+	wj := "\u2060"
+	nbsp := "\u00A0"
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"clean input", raw, raw},
+		{"leading BOM", bom + raw, raw},
+		{"trailing BOM", raw + bom, raw},
+		{"surrounding BOM", bom + raw + bom, raw},
+		{"zero-width space", zws + raw + zws, raw},
+		{"zero-width non-joiner", zwnj + raw, raw},
+		{"zero-width joiner", zwj + raw, raw},
+		{"word joiner", wj + raw, raw},
+		{"no-break space", nbsp + raw + nbsp, raw},
+		{"mixed invisible", bom + zws + nbsp + raw + nbsp + zwnj + bom, raw},
+		{"whitespace and BOM", "  " + bom + "\n" + raw + "\n" + bom + "  ", raw},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := trimInvisible(tt.input)
+			if got != tt.want {
+				t.Errorf("trimInvisible() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildADFComment_BOM(t *testing.T) {
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	bommed := "\uFEFF" + adf
+	result, err := buildADFComment(bommed, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for BOM-prefixed JSON: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
+	}
+}
+
+func TestStripCodeFences(t *testing.T) {
+	raw := `{"type":"doc"}`
+
+	// ADF containing a codeBlock with triple backticks inside the text.
+	embeddedJSON := `{"type":"doc","content":[{"type":"codeBlock","content":[{"type":"text","text":"` +
+		"```go\nfmt.Println()\n```" +
+		`"}]}]}`
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no fences", raw, raw},
+		{"bare fences", "```\n" + raw + "\n```", raw},
+		{"json tag", "```json\n" + raw + "\n```", raw},
+		{"adf tag", "```adf\n" + raw + "\n```", raw},
+		{"surrounding whitespace", "  ```json\n" + raw + "\n```  ", raw},
+		{"trailing newline after close", "```json\n" + raw + "\n```\n", raw},
+		{"no closing fence", "```json\n" + raw, "```json\n" + raw},
+		{"embedded backticks", "```json\n" + embeddedJSON + "\n```", embeddedJSON},
+		{"crlf line endings", "```json\r\n" + raw + "\r\n```", raw},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripCodeFences(tt.input)
+			if got != tt.want {
+				t.Errorf("stripCodeFences() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildADFComment_Fenced(t *testing.T) {
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	fenced := "```json\n" + adf + "\n```"
+	result, err := buildADFComment(fenced, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for fenced JSON: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
+	}
+}
+
+func TestBuildADFComment_BOMBeforeFence(t *testing.T) {
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	input := "\uFEFF```json\n" + adf + "\n```"
+	result, err := buildADFComment(input, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for BOM-prefixed fenced JSON: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
+	}
+}
+
 func TestADFHashRoundtrip(t *testing.T) {
 	assessment := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
 	hash := "abc123def456"
