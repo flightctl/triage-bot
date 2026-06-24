@@ -213,6 +213,7 @@ func (s *Scanner) scanStale(ctx context.Context) {
 			s.logger.Error("Failed to remove autofix label from stale issue",
 				zap.String("issue", issue.Key),
 				zap.Error(err))
+			continue
 		}
 		s.logger.Info("Marked issue as stale",
 			zap.String("issue", issue.Key))
