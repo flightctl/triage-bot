@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,13 @@ import (
 	"triage-bot/triage"
 )
 
+// ScannerJiraClient is the subset of jira.Client used by the scanner.
+type ScannerJiraClient interface {
+	SearchTickets(ctx context.Context, jql string, maxResults int, nextPageToken string) (*jira.JiraSearchResponse, error)
+	AddLabel(ctx context.Context, key, label string) error
+	RemoveLabel(ctx context.Context, key, label string) error
+}
+
 // IssueProcessor processes a single Jira issue.
 type IssueProcessor interface {
 	Process(ctx context.Context, issue jira.JiraIssue) error
@@ -21,7 +29,7 @@ type IssueProcessor interface {
 
 // Scanner polls Jira for bugs and dispatches them to the processor.
 type Scanner struct {
-	jiraClient *jira.Client
+	jiraClient ScannerJiraClient
 	processor  IssueProcessor
 	cfg        config.Config
 	logger     *zap.Logger
@@ -32,7 +40,7 @@ type Scanner struct {
 	done   chan struct{}
 }
 
-func NewScanner(jiraClient *jira.Client, processor IssueProcessor, inFlight *InFlight, cfg config.Config, logger *zap.Logger) *Scanner {
+func NewScanner(jiraClient ScannerJiraClient, processor IssueProcessor, inFlight *InFlight, cfg config.Config, logger *zap.Logger) *Scanner {
 	return &Scanner{
 		jiraClient: jiraClient,
 		processor:  processor,
@@ -180,6 +188,8 @@ func (s *Scanner) scanStale(ctx context.Context) {
 
 	s.logger.Info("Found stale issues", zap.Int("count", len(allIssues)))
 
+	// Label mutations are lightweight Jira API calls (no AI invocation),
+	// so we skip the concurrency semaphore used by scan().
 	for _, issue := range allIssues {
 		if ctx.Err() != nil {
 			break
@@ -218,7 +228,7 @@ func (s *Scanner) buildStaleJQL() string {
 	autofixLabel := s.cfg.Triage.AutoFixLabel
 	staleLabel := s.cfg.Triage.StaleLabel
 
-	allExcluded := append(s.cfg.Triage.ProgressionLabels, staleLabel)
+	allExcluded := slices.Concat(s.cfg.Triage.ProgressionLabels, []string{staleLabel})
 	quoted := make([]string, len(allExcluded))
 	for i, l := range allExcluded {
 		quoted[i] = fmt.Sprintf("%q", l)
