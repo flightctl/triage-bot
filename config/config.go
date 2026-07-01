@@ -315,7 +315,7 @@ func (c *Config) validateSource() error {
 				if repo.Name == "" {
 					return fmt.Errorf("source.projects.%s.repos[%d]: name is required for multi-repo projects", key, i)
 				}
-				if filepath.Clean(repo.Name) != repo.Name || strings.ContainsAny(repo.Name, `/\`) || repo.Name == ".." {
+				if repo.Name == "." || repo.Name == ".." || filepath.Clean(repo.Name) != repo.Name || strings.ContainsAny(repo.Name, `/\`) {
 					return fmt.Errorf("source.projects.%s.repos[%d]: name %q is not a safe path basename", key, i, repo.Name)
 				}
 				if seen[repo.Name] {
