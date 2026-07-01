@@ -73,6 +73,8 @@ func (m *Manager) EnsureCloned(ctx context.Context, projectKey string) (string, 
 		state.path = path
 		state.cloned = true
 	} else {
+		// Update failures are non-fatal: the existing clone is still valid,
+		// and the AI gets slightly stale code rather than no triage at all.
 		_ = m.updateProject(ctx, projectKey, projCfg, state.path)
 	}
 
@@ -97,13 +99,13 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 
 	if isMultiRepo {
 		if err := m.createMultiRepoWorktrees(ctx, projCfg, projectDir, worktreeBase); err != nil {
-			_ = os.RemoveAll(worktreeBase)
+			_ = os.RemoveAll(worktreeBase) // best-effort cleanup on failure
 			return "", nil, err
 		}
 	} else {
 		clonePath := projectDir
 		if err := m.createWorktree(ctx, clonePath, worktreeBase, refOrDefault(projCfg.Repos[0].Ref)); err != nil {
-			_ = os.RemoveAll(worktreeBase)
+			_ = os.RemoveAll(worktreeBase) // best-effort cleanup on failure
 			return "", nil, err
 		}
 	}
@@ -120,7 +122,7 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 		} else {
 			m.removeWorktree(cleanupCtx, projectDir, worktreeBase)
 		}
-		_ = os.RemoveAll(worktreeBase)
+		_ = os.RemoveAll(worktreeBase) // best-effort cleanup
 	}
 
 	return worktreeBase, cleanup, nil
@@ -148,8 +150,7 @@ func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg c
 
 		if projCfg.RootRepo != "" {
 			m.logger.Info("Cloning root repo",
-				zap.String("project", projectKey),
-				zap.String("url", projCfg.RootRepo))
+				zap.String("project", projectKey))
 			if err := m.cloneRepo(ctx, projCfg.RootRepo, projectDir, refOrDefault(projCfg.RootRepoRef)); err != nil {
 				return "", fmt.Errorf("failed to clone root repo: %w", err)
 			}
@@ -159,8 +160,7 @@ func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg c
 			dest := filepath.Join(projectDir, filepath.Clean(repo.Name))
 			m.logger.Info("Cloning sub-repo",
 				zap.String("project", projectKey),
-				zap.String("name", repo.Name),
-				zap.String("url", repo.URL))
+				zap.String("name", repo.Name))
 			if err := m.cloneRepo(ctx, repo.URL, dest, refOrDefault(repo.Ref)); err != nil {
 				return "", fmt.Errorf("failed to clone repo %s: %w", repo.Name, err)
 			}
@@ -168,8 +168,7 @@ func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg c
 	} else {
 		repo := projCfg.Repos[0]
 		m.logger.Info("Cloning source repo",
-			zap.String("project", projectKey),
-			zap.String("url", repo.URL))
+			zap.String("project", projectKey))
 		if err := m.cloneRepo(ctx, repo.URL, projectDir, refOrDefault(repo.Ref)); err != nil {
 			return "", fmt.Errorf("failed to clone repo: %w", err)
 		}
