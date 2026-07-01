@@ -75,9 +75,10 @@ func loadTemplate(cfg config.TriageConfig) (*template.Template, error) {
 // Run executes the triage assessment for a single issue.
 // Returns the markdown assessment text and metadata, or an error.
 func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string, *Metadata, error) {
-	outputPath := filepath.Join(outputBase, issueKey+".md")
-	metadataPath := filepath.Join(outputBase, issueKey+".meta.json")
-	workspaceDir := filepath.Join(workspaceBase, issueKey)
+	cleanKey := filepath.Clean(issueKey)
+	outputPath := filepath.Join(outputBase, cleanKey+".md")
+	metadataPath := filepath.Join(outputBase, cleanKey+".meta.json")
+	workspaceDir := filepath.Join(workspaceBase, cleanKey)
 	workDir := workspaceDir
 
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {

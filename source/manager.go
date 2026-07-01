@@ -89,7 +89,8 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 		return "", nil, fmt.Errorf("no source config for project %s", projectKey)
 	}
 
-	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", filepath.Clean(issueKey))
+	cleanIssueKey := filepath.Clean(issueKey)
+	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", cleanIssueKey)
 	if err := os.MkdirAll(worktreeBase, 0o750); err != nil {
 		return "", nil, fmt.Errorf("failed to create worktree base: %w", err)
 	}
