@@ -210,9 +210,8 @@ func (m *Manager) cloneRepo(ctx context.Context, repoURL, dest, ref string) erro
 	}
 
 	cmd := m.execFn(ctx, "git", "clone", "--depth", "1", "--branch", ref, "--", repoURL, dest)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
+		m.logger.Debug("git clone output", zap.String("output", string(out)))
 		return fmt.Errorf("git clone failed: %w", err)
 	}
 	return nil
@@ -220,16 +219,14 @@ func (m *Manager) cloneRepo(ctx context.Context, repoURL, dest, ref string) erro
 
 func (m *Manager) updateRepo(ctx context.Context, dest, ref string) error {
 	fetch := m.execFn(ctx, "git", "-C", dest, "fetch", "origin")
-	fetch.Stdout = os.Stdout
-	fetch.Stderr = os.Stderr
-	if err := fetch.Run(); err != nil {
+	if out, err := fetch.CombinedOutput(); err != nil {
+		m.logger.Debug("git fetch output", zap.String("output", string(out)))
 		return fmt.Errorf("git fetch failed: %w", err)
 	}
 
 	checkout := m.execFn(ctx, "git", "-C", dest, "checkout", "origin/"+ref)
-	checkout.Stdout = os.Stdout
-	checkout.Stderr = os.Stderr
-	if err := checkout.Run(); err != nil {
+	if out, err := checkout.CombinedOutput(); err != nil {
+		m.logger.Debug("git checkout output", zap.String("output", string(out)))
 		return fmt.Errorf("git checkout failed: %w", err)
 	}
 	return nil
@@ -237,9 +234,8 @@ func (m *Manager) updateRepo(ctx context.Context, dest, ref string) error {
 
 func (m *Manager) createWorktree(ctx context.Context, clonePath, worktreePath, ref string) error {
 	cmd := m.execFn(ctx, "git", "-C", clonePath, "worktree", "add", worktreePath, "origin/"+ref)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
+		m.logger.Debug("git worktree add output", zap.String("output", string(out)))
 		return fmt.Errorf("git worktree add failed: %w", err)
 	}
 	return nil
