@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -16,6 +17,8 @@ import (
 	"triage-bot/config"
 	"triage-bot/source"
 )
+
+var validIssueKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
 
 const (
 	workspaceBase = "/tmp/triage-workspace"
@@ -75,10 +78,12 @@ func loadTemplate(cfg config.TriageConfig) (*template.Template, error) {
 // Run executes the triage assessment for a single issue.
 // Returns the markdown assessment text and metadata, or an error.
 func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string, *Metadata, error) {
-	cleanKey := filepath.Clean(issueKey)
-	outputPath := filepath.Join(outputBase, cleanKey+".md")
-	metadataPath := filepath.Join(outputBase, cleanKey+".meta.json")
-	workspaceDir := filepath.Join(workspaceBase, cleanKey)
+	if !validIssueKey.MatchString(issueKey) {
+		return "", nil, fmt.Errorf("invalid issue key %q", issueKey)
+	}
+	outputPath := filepath.Join(outputBase, issueKey+".md")
+	metadataPath := filepath.Join(outputBase, issueKey+".meta.json")
+	workspaceDir := filepath.Join(workspaceBase, issueKey)
 	workDir := workspaceDir
 
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {

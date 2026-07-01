@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 
 	"triage-bot/config"
 )
+
+var validIssueKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
 
 // Manager handles cloning and updating source repositories for projects.
 // Clones are lazy (first access per project key) and shared across issues.
@@ -89,8 +92,10 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 		return "", nil, fmt.Errorf("no source config for project %s", projectKey)
 	}
 
-	cleanIssueKey := filepath.Clean(issueKey)
-	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", cleanIssueKey)
+	if !validIssueKey.MatchString(issueKey) {
+		return "", nil, fmt.Errorf("invalid issue key %q", issueKey)
+	}
+	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", issueKey)
 	if err := os.MkdirAll(worktreeBase, 0o750); err != nil {
 		return "", nil, fmt.Errorf("failed to create worktree base: %w", err)
 	}
