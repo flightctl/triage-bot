@@ -15,7 +15,10 @@ import (
 	"triage-bot/config"
 )
 
-var validIssueKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
+var (
+	validProjectKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]+$`)
+	validIssueKey   = regexp.MustCompile(`^[A-Z][A-Z0-9_]+-\d+$`)
+)
 
 // Manager handles cloning and updating source repositories for projects.
 // Clones are lazy (first access per project key) and shared across issues.
@@ -59,6 +62,9 @@ func (m *Manager) HasProject(projectKey string) bool {
 // serializes clone and update operations; concurrent issues for the same
 // project queue here but run their AI CLI invocations in parallel.
 func (m *Manager) EnsureCloned(ctx context.Context, projectKey string) (string, error) {
+	if !validProjectKey.MatchString(projectKey) {
+		return "", fmt.Errorf("invalid project key %q", projectKey)
+	}
 	projCfg, ok := m.cfg.Projects[projectKey]
 	if !ok {
 		return "", nil
@@ -100,7 +106,7 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 		return "", nil, fmt.Errorf("failed to create worktree base: %w", err)
 	}
 
-	projectDir := filepath.Join(m.cfg.BaseDir, filepath.Clean(projectKey))
+	projectDir := filepath.Join(m.cfg.BaseDir, projectKey)
 	isMultiRepo := len(projCfg.Repos) > 1
 
 	if isMultiRepo {
@@ -146,7 +152,7 @@ func (m *Manager) getOrCreateState(projectKey string) *cloneState {
 }
 
 func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg config.SourceProjectConfig) (string, error) {
-	projectDir := filepath.Join(m.cfg.BaseDir, filepath.Clean(projectKey))
+	projectDir := filepath.Join(m.cfg.BaseDir, projectKey)
 	isMultiRepo := len(projCfg.Repos) > 1
 
 	if isMultiRepo {
