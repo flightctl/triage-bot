@@ -14,8 +14,15 @@ import (
 )
 
 const (
-	hashPrefix = "triage-bot | desc:"
-	hashLen    = 12
+	// assessmentVersion is bumped when a bot or workflow change warrants
+	// re-assessing all issues. Existing comments with an older (or missing)
+	// version trigger ActionUpdate on the next scan cycle.
+	assessmentVersion = "2"
+
+	markerPrefix  = "triage-bot | "
+	versionPrefix = "v:"
+	hashPrefix    = "desc:"
+	hashLen       = 12
 )
 
 // JiraClient is the subset of the Jira client used by the processor.
@@ -169,8 +176,11 @@ func (p *Processor) determineAction(ctx context.Context, key, descHash string) (
 		return ActionCreate, ""
 	}
 
-	storedHash := extractHash(string(botComment.Body))
-	if storedHash == descHash {
+	body := string(botComment.Body)
+	storedHash := extractHash(body)
+	storedVersion := extractVersion(body)
+
+	if storedHash == descHash && storedVersion == assessmentVersion {
 		return ActionSkip, botComment.ID
 	}
 
@@ -184,7 +194,7 @@ func (p *Processor) findBotComment(comments []jira.JiraComment) *jira.JiraCommen
 		isBot := c.Author.EmailAddress == botUser ||
 			c.Author.DisplayName == botUser ||
 			c.Author.Name == botUser
-		hasMarker := strings.Contains(string(c.Body), hashPrefix)
+		hasMarker := strings.Contains(string(c.Body), markerPrefix)
 
 		if isBot && hasMarker {
 			return c
@@ -338,7 +348,8 @@ func buildADFComment(assessment, hash string) (map[string]any, error) {
 		return nil, fmt.Errorf("ADF missing content array")
 	}
 
-	// Append: horizontal rule + hash footer paragraph
+	footerText := markerPrefix + versionPrefix + assessmentVersion + " | " + hashPrefix + hash
+
 	content = append(content,
 		map[string]any{"type": "rule"},
 		map[string]any{
@@ -346,7 +357,7 @@ func buildADFComment(assessment, hash string) (map[string]any, error) {
 			"content": []any{
 				map[string]any{
 					"type": "text",
-					"text": hashPrefix + hash,
+					"text": footerText,
 					"marks": []any{
 						map[string]any{"type": "em"},
 					},
@@ -367,16 +378,20 @@ func computeHash(s string) string {
 
 func appendHashFooter(body, hash string) string {
 	body = strings.TrimRight(body, "\n")
-	return body + "\n\n---\n_" + hashPrefix + hash + "_\n"
+	return body + "\n\n---\n_" + markerPrefix + versionPrefix + assessmentVersion + " | " + hashPrefix + hash + "_\n"
 }
 
+// extractHash finds the last "desc:" marker and returns the hash.
+// Works for both legacy ("triage-bot | desc:HASH") and versioned
+// ("triage-bot | v:N | desc:HASH") formats because "desc:" appears
+// in both and LastIndex finds the correct position regardless.
 func extractHash(body string) string {
 	idx := strings.LastIndex(body, hashPrefix)
 	if idx < 0 {
 		return ""
 	}
-	start := idx + len(hashPrefix)
-	rest := body[start:]
+
+	rest := body[idx+len(hashPrefix):]
 	for i, c := range rest {
 		if c == '_' || c == '\n' {
 			rest = rest[:i]
@@ -387,4 +402,19 @@ func extractHash(body string) string {
 		return ""
 	}
 	return rest
+}
+
+func extractVersion(body string) string {
+	idx := strings.LastIndex(body, markerPrefix+versionPrefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(markerPrefix+versionPrefix)
+	rest := body[start:]
+
+	end := strings.IndexAny(rest, " |_\n")
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }

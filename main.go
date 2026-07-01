@@ -18,6 +18,7 @@ import (
 	"triage-bot/jira"
 	"triage-bot/scanner"
 	"triage-bot/server"
+	"triage-bot/source"
 	"triage-bot/triage"
 	"triage-bot/workflow"
 )
@@ -50,9 +51,16 @@ func main() {
 		logger.Fatal("Failed to import workflow", zap.Error(err))
 	}
 
+	var sourceMgr *source.Manager
+	if len(cfg.Source.Projects) > 0 {
+		sourceMgr = source.NewManager(cfg.Source, logger)
+		logger.Info("Source repo manager initialized",
+			zap.Int("projects", len(cfg.Source.Projects)))
+	}
+
 	jiraClient := jira.NewClient(cfg.Jira.BaseURL, cfg.Jira.Username, cfg.Jira.APIToken, logger)
 
-	executor, err := triage.NewExecutor(*cfg, logger)
+	executor, err := triage.NewExecutor(*cfg, sourceMgr, logger)
 	if err != nil {
 		logger.Fatal("Failed to create executor", zap.Error(err))
 	}

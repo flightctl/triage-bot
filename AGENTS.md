@@ -37,29 +37,33 @@ The **Go bot** handles the control plane (poll for bugs, check comment state, po
 | `jira/`      | Jira REST API client (search, comments, labels) and ADF models; adapted from jira-ai-issue-solver |
 | `triage/`    | Core logic — processor (comment state machine), executor (CLI invocation), metadata parser |
 | `scanner/`   | Polling-based Jira scanner with ticker loop and semaphore-bounded worker pool            |
+| `source/`    | Per-project source repo cloning and git worktree management for source-level assessments |
 | `workflow/`  | Git-based workflow importer (full clone or sparse checkout at startup)                    |
 | `server/`    | HTTP server: `/health` endpoint + optional `/webhook` handler (HMAC-SHA256 verified)     |
 
 ### Key Design Decisions
 
 - **Stateless**: Jira is the sole source of truth. The bot identifies its own prior comments by matching author + a description hash marker in the comment footer. No database, no local state file.
-- **Description hash**: SHA-256 of issue description text, first 12 hex chars, embedded as `_triage-bot | desc:<hash>_` in the comment footer. Re-triage only fires when the hash changes — not on any issue update.
+- **Description hash + version**: SHA-256 of issue description text, first 12 hex chars, embedded as `_triage-bot | v:<version> | desc:<hash>_` in the comment footer. Re-triage fires when the hash changes OR the version doesn't match the current `assessmentVersion` constant. Legacy comments without a version segment are treated as version mismatch.
 - **Metadata sidecar**: The AI writes a JSON file (`{KEY}.meta.json`) alongside the markdown assessment. The bot uses this for structured decisions (AUTO_FIX labeling) without parsing markdown. Missing sidecar degrades gracefully — comment still posts, label logic skipped.
-- **Workflow-agnostic**: Triage analysis is driven by a Go template (`task.tmpl`) rendered per issue with variables like `{{.IssueKey}}`, `{{.OutputPath}}`, `{{.WorkflowPath}}`. The workflow repo is imported at startup via configurable git clone.
+- **Workflow-agnostic**: Triage analysis is driven by a Go template (`task.tmpl`) rendered per issue with variables like `{{.IssueKey}}`, `{{.OutputPath}}`, `{{.WorkflowPath}}`, `{{.SourcePath}}`. The workflow repo is imported at startup via configurable git clone.
+- **Dual-mode assessment**: When `source.projects` is configured for a project key, the bot clones the repo, creates a git worktree, and uses `bugfix:assess` (source-aware). Otherwise it uses `triage:assess` (Jira-only). The task template handles the conditional via `{{if .SourcePath}}`.
 - **Webhook + polling coexistence**: Both can run simultaneously. The description-hash check prevents double-processing. Webhooks give near-real-time response; polling is the reliability backstop.
 - **Webhook security**: The `/webhook` endpoint and OCP Route are only created when `server.webhook_secret` is configured. No secret = nothing exposed. All requests verified via HMAC-SHA256.
 
 ### Workflow
 
-1. **Startup**: Load config → write `~/.claude/settings.json` (MCP config) → import workflow repo → start scanner and HTTP server
+1. **Startup**: Load config → write `~/.claude.json` (MCP config) → import workflow repo → init source manager (if configured) → start scanner and HTTP server
 2. **Polling** (`scanner/scanner.go`): JQL query at configured interval, fan out to worker pool bounded by `ai.max_concurrent`
 3. **Per-issue processing** (`triage/processor.go`):
-   - Fetch comments → find bot's comment by author + `desc:` marker
-   - Compare stored hash with current description hash → `ActionSkip` / `ActionCreate` / `ActionUpdate`
-   - Render task template → write `task.md` → invoke Claude CLI
+   - Fetch comments → find bot's comment by author + `triage-bot |` marker
+   - Compare stored hash + version with current description hash + `assessmentVersion` → `ActionSkip` / `ActionCreate` / `ActionUpdate`
+   - If source repos configured: clone-or-update shared repo, create per-issue git worktree
+   - Render task template → write `task.md` → invoke Claude CLI (CWD = worktree if source, else temp workspace)
    - Read assessment `.md` + metadata `.meta.json`
-   - Append hash footer → post/update Jira comment
+   - Append version + hash footer → post/update Jira comment
    - If metadata indicates AUTO_FIX ≥ threshold → add label
+   - Clean up worktree (if created)
 4. **Webhooks** (`server/webhook.go`): Jira POSTs on issue create/update → HMAC verified → fed to same processor asynchronously
 5. **Dry run**: When `dry_run: true`, the bot runs the full flow (including AI invocation) but logs the comment instead of writing to Jira
 
@@ -201,18 +205,29 @@ These are also set as pod-level env vars by the Helm Deployment template.
 
 ## Implementation Details
 
-### Description Hash Functions
+### Description Hash and Version Functions
 
 All in `triage/processor.go`:
 - `computeHash(s string) string` — SHA-256, first 12 hex chars
-- `appendHashFooter(body, hash string) string` — appends `\n\n---\n_triage-bot | desc:<hash>_\n`
-- `extractHash(body string) string` — finds last `triage-bot | desc:` marker, extracts hash
+- `appendHashFooter(body, hash string) string` — appends `\n\n---\n_triage-bot | v:<version> | desc:<hash>_\n`
+- `extractHash(body string) string` — finds last `desc:` marker, extracts hash (supports both legacy and versioned formats)
+- `extractVersion(body string) string` — finds last `v:` marker, extracts version string (returns "" for legacy comments)
+- `assessmentVersion` — constant that triggers mass re-assessment when bumped. Increment when a bot or workflow change warrants re-assessing all issues.
+
+### Assessment Version Bump Policy
+
+The `assessmentVersion` constant in `triage/processor.go` controls when all issues get re-assessed. Bump it when:
+- The task template changes in a way that produces materially different assessments
+- The AI workflow (triage:assess or bugfix:assess) is updated with new analysis capabilities
+- Source repo support is added for a project that previously had Jira-only assessments
+
+Do NOT bump for: bug fixes that don't change assessment quality, config changes, infrastructure updates.
 
 ### Comment Identification
 
 `findBotComment()` scans comments in reverse order (newest first), matching on:
 1. Author email, display name, or username matches `jira.bot_username` (defaults to `jira.username`)
-2. Comment body contains the `triage-bot | desc:` hash marker
+2. Comment body contains the `triage-bot | ` marker prefix
 
 Both conditions must match. This prevents false positives from other bots or manual comments that happen to contain the marker text.
 
@@ -226,6 +241,19 @@ Both conditions must match. This prevents false positives from other bots or man
 | `{{.MetadataPath}}` | Path where JSON metadata sidecar must be written     |
 | `{{.WorkflowPath}}` | Path to the imported workflow files                  |
 | `{{.ProjectKey}}`   | Jira project key (e.g., `PROJ`)                     |
+| `{{.SourcePath}}`   | Path to source code worktree (empty if not configured for project) |
+
+The default `task.tmpl` uses `{{.SourcePath}}` to conditionally select `bugfix:assess` (source-aware) or `triage:assess` (Jira-only).
+
+### Source Repo Manager
+
+The `source/` package (`source/manager.go`) manages per-project source repo clones:
+
+- **Lazy initialization**: Repos are cloned on first use per project key via `sync.Once`. Subsequent calls do `git fetch` + `git checkout` to update.
+- **Shared clones**: One clone per project key under `source.base_dir` (default `/var/lib/triage-bot/repos`). Persists across scan cycles.
+- **Git worktrees**: Each issue gets an isolated worktree created from the shared clone. The AI's working directory is set to the worktree. Worktrees are cleaned up after the assessment completes.
+- **Multi-repo support**: Projects with multiple repos get per-sub-repo clones under `<base_dir>/<PROJECT>/<repo.name>/` and per-sub-repo worktrees under the issue's worktree directory.
+- **Token auth**: Optional `source.token` is embedded in the clone URL for private repos.
 
 Override via `triage.task_template` (inline) or `triage.task_template_path` (file path).
 
@@ -275,6 +303,9 @@ Adapted from jira-ai-issue-solver (`services/jira.go`). Key differences from the
 │   ├── executor.go      # Task template rendering, CLI invocation
 │   ├── metadata.go      # JSON sidecar parsing, AUTO_FIX threshold
 │   └── metadata_test.go
+├── source/
+│   ├── manager.go       # Source repo cloning, worktree management
+│   └── manager_test.go
 ├── scanner/
 │   └── scanner.go       # Polling loop, JQL builder, worker pool
 ├── server/
@@ -300,6 +331,8 @@ Adapted from jira-ai-issue-solver (`services/jira.go`). Key differences from the
 - **ADF format**: Jira Cloud API v3 requires Atlassian Document Format for writes. Always use `TextToADF()` — never post raw text strings to comment/description endpoints.
 - **Hash extraction**: The `extractHash()` function looks for the _last_ occurrence of the marker. If the assessment text itself contains the marker string, the hash will still be correctly extracted from the footer.
 - **Webhook without secret**: If `server.webhook_secret` is empty, the webhook handler is nil and the `/webhook` route is not registered. The OCP Route is also not created. This is intentional — never expose an unauthenticated webhook endpoint.
-- **Polling + webhook overlap**: Safe by design. The processor's hash check is the deduplication mechanism. If both trigger for the same issue, the second one sees matching hashes and skips.
+- **Polling + webhook overlap**: Safe by design. The processor's hash + version check is the deduplication mechanism. If both trigger for the same issue, the second one sees matching hashes and skips.
+- **Source repo Viper key casing**: Viper lowercases YAML map keys, but Jira project keys are uppercase. `normalizeSourceKeys()` in config validation uppercases `source.projects` map keys after unmarshalling.
+- **Worktree cleanup**: The executor defers worktree cleanup. If the AI CLI is killed mid-assessment, the worktree persists until the next run for the same issue (which creates a fresh one).
 - **MCP config location**: `setupMCPConfig()` writes to `~/.claude.json` (NOT `~/.claude/settings.json`). Claude Code reads user-scoped MCP servers from `~/.claude.json`. The function merges into the existing file to preserve other Claude Code state (migrations, preferences).
 - **MCP env var auto-population**: `setupMCPConfig()` populates common env vars (ATLASSIAN_SITE_NAME, ATLASSIAN_USER_EMAIL, ATLASSIAN_API_TOKEN) from the bot's Jira config only when the MCP env map doesn't already set them. Explicit MCP env values always win.

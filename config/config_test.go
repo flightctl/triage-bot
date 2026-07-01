@@ -268,3 +268,181 @@ triage:
 		t.Errorf("import.dest = %q, want %q", cfg.Triage.Import.Dest, "/custom/path")
 	}
 }
+
+func TestLoadConfig_SourceDefaults(t *testing.T) {
+	content := `
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
+ai: {provider: claude, claude: {api_key: "sk-test"}}
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Source.BaseDir != "/var/lib/triage-bot/repos" {
+		t.Errorf("source.base_dir = %q, want default", cfg.Source.BaseDir)
+	}
+	if len(cfg.Source.Projects) != 0 {
+		t.Errorf("source.projects = %v, want empty", cfg.Source.Projects)
+	}
+}
+
+func TestLoadConfig_SourceSingleRepo(t *testing.T) {
+	content := `
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
+ai: {provider: claude, claude: {api_key: "sk-test"}}
+source:
+  projects:
+    PROJ:
+      repos:
+        - url: https://github.com/org/proj.git
+          ref: main
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	proj, ok := cfg.Source.Projects["PROJ"]
+	if !ok {
+		t.Fatal("expected PROJ in source.projects")
+	}
+	if len(proj.Repos) != 1 {
+		t.Fatalf("repos count = %d, want 1", len(proj.Repos))
+	}
+	if proj.Repos[0].URL != "https://github.com/org/proj.git" {
+		t.Errorf("repo url = %q", proj.Repos[0].URL)
+	}
+}
+
+func TestLoadConfig_SourceMultiRepo(t *testing.T) {
+	content := `
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
+ai: {provider: claude, claude: {api_key: "sk-test"}}
+source:
+  projects:
+    PROJ:
+      root_repo: https://github.com/org/workspace.git
+      repos:
+        - name: backend
+          url: https://github.com/org/backend.git
+        - name: frontend
+          url: https://github.com/org/frontend.git
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	proj := cfg.Source.Projects["PROJ"]
+	if proj.RootRepo != "https://github.com/org/workspace.git" {
+		t.Errorf("root_repo = %q", proj.RootRepo)
+	}
+	if len(proj.Repos) != 2 {
+		t.Fatalf("repos count = %d, want 2", len(proj.Repos))
+	}
+}
+
+func TestLoadConfig_SourceValidation(t *testing.T) {
+	base := `
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
+ai: {provider: claude, claude: {api_key: "sk-test"}}
+`
+	tests := []struct {
+		name    string
+		source  string
+		wantErr string
+	}{
+		{
+			name: "missing base_dir",
+			source: `
+source:
+  base_dir: ""
+  projects:
+    PROJ:
+      repos:
+        - url: https://github.com/org/repo.git
+`,
+			wantErr: "source.base_dir is required",
+		},
+		{
+			name: "no repos in project",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos: []
+`,
+			wantErr: "source.projects.PROJ: at least one repo is required",
+		},
+		{
+			name: "empty repo URL",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - url: ""
+`,
+			wantErr: "source.projects.PROJ.repos[0]: url is required",
+		},
+		{
+			name: "multi-repo missing name",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - name: backend
+          url: https://github.com/org/backend.git
+        - url: https://github.com/org/frontend.git
+`,
+			wantErr: "source.projects.PROJ.repos[1]: name is required for multi-repo projects",
+		},
+		{
+			name: "multi-repo duplicate name",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - name: backend
+          url: https://github.com/org/backend.git
+        - name: backend
+          url: https://github.com/org/other.git
+`,
+			wantErr: "source.projects.PROJ: duplicate repo name \"backend\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(base+tt.source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadConfig(path)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

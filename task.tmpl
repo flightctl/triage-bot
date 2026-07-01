@@ -1,5 +1,13 @@
-Read the triage assess skill instructions at {{.WorkflowPath}}/skills/assess.md
+{{- if .SourcePath -}}
+Read the bugfix assess skill instructions at {{.WorkflowPath}}/bugfix/skills/assess.md
 and follow them to assess the Jira bug {{.IssueURL}}.
+
+The project's source code is available at {{.SourcePath}}.
+Do NOT modify any source files. This is read-only analysis.
+{{- else -}}
+Read the triage assess skill instructions at {{.WorkflowPath}}/triage/skills/assess.md
+and follow them to assess the Jira bug {{.IssueURL}}.
+{{- end}}
 
 ## MCP Server
 

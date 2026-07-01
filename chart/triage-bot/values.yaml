@@ -143,7 +143,8 @@ config:
     task_template_path: ""
     # -- Inline task template (overrides task_template_path). Go template
     #    with variables: {{.IssueKey}}, {{.IssueURL}}, {{.OutputPath}},
-    #    {{.MetadataPath}}, {{.WorkflowPath}}, {{.ProjectKey}}
+    #    {{.MetadataPath}}, {{.WorkflowPath}}, {{.ProjectKey}},
+    #    {{.SourcePath}} (empty when source repos not configured)
     task_template: ""
     # -- Import a workflow repo at startup (optional)
     import:
@@ -155,6 +156,32 @@ config:
       ref: "main"
       # -- Local destination (defaults to triage.workflow_path)
       dest: ""
+
+  # -- Source repo configuration for source-level triage assessments (optional).
+  #    When configured, the bot clones project repos and uses bugfix:assess
+  #    (source-aware) instead of triage:assess (Jira-only). Omit entirely
+  #    or leave projects empty to use Jira-only mode.
+  source:
+    # -- Base directory for shared repo clones
+    base_dir: /var/lib/triage-bot/repos
+    # -- Per-project source repo mappings. Keys are Jira project keys.
+    #    Single-repo example:
+    #      PROJ:
+    #        repos:
+    #          - url: https://github.com/org/proj.git
+    #            ref: main
+    #    Multi-repo example:
+    #      MULTI:
+    #        root_repo: https://github.com/org/workspace.git
+    #        root_repo_ref: main
+    #        repos:
+    #          - name: backend
+    #            url: https://github.com/org/backend.git
+    #            ref: main
+    #          - name: frontend
+    #            url: https://github.com/org/frontend.git
+    #            ref: main
+    projects: {}
 
   mcp:
     jira:

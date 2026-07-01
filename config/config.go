@@ -16,6 +16,7 @@ type Config struct {
 	Jira    JiraConfig    `mapstructure:"jira"`
 	AI      AIConfig      `mapstructure:"ai"`
 	Triage  TriageConfig  `mapstructure:"triage"`
+	Source  SourceConfig  `mapstructure:"source"`
 	MCP     MCPConfig     `mapstructure:"mcp"`
 	DryRun  bool          `mapstructure:"dry_run"`
 }
@@ -83,6 +84,23 @@ type ImportConfig struct {
 	Dest string `mapstructure:"dest"`
 }
 
+type SourceConfig struct {
+	BaseDir  string                         `mapstructure:"base_dir"`
+	Projects map[string]SourceProjectConfig `mapstructure:"projects"`
+}
+
+type SourceProjectConfig struct {
+	RootRepo    string            `mapstructure:"root_repo"`
+	RootRepoRef string            `mapstructure:"root_repo_ref"`
+	Repos       []SourceRepoEntry `mapstructure:"repos"`
+}
+
+type SourceRepoEntry struct {
+	Name string `mapstructure:"name"`
+	URL  string `mapstructure:"url"`
+	Ref  string `mapstructure:"ref"`
+}
+
 type MCPConfig struct {
 	Jira MCPServerConfig `mapstructure:"jira"`
 }
@@ -110,6 +128,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("triage.missing_info_label", "triage-missing-info")
 	v.SetDefault("triage.not_fixable_label", "triage-not-fixable")
 	v.SetDefault("triage.import.ref", "main")
+	v.SetDefault("source.base_dir", "/var/lib/triage-bot/repos")
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -167,6 +186,8 @@ func LoadConfig(configPath string) (*Config, error) {
 	bindEnv("triage.import.path")
 	bindEnv("triage.import.ref")
 	bindEnv("triage.import.dest")
+
+	bindEnv("source.base_dir")
 
 	if configPath != "" {
 		v.SetConfigFile(configPath)
@@ -244,6 +265,61 @@ func (c *Config) normalizeAndValidate() error {
 
 	if c.Triage.Import.Dest == "" {
 		c.Triage.Import.Dest = c.Triage.WorkflowPath
+	}
+
+	c.normalizeSourceKeys()
+
+	if err := c.validateSource(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// normalizeSourceKeys uppercases source.projects map keys because Viper
+// lowercases YAML map keys during unmarshalling, but Jira project keys
+// are always uppercase.
+func (c *Config) normalizeSourceKeys() {
+	if len(c.Source.Projects) == 0 {
+		return
+	}
+	normalized := make(map[string]SourceProjectConfig, len(c.Source.Projects))
+	for k, v := range c.Source.Projects {
+		normalized[strings.ToUpper(k)] = v
+	}
+	c.Source.Projects = normalized
+}
+
+func (c *Config) validateSource() error {
+	if len(c.Source.Projects) == 0 {
+		return nil
+	}
+
+	if c.Source.BaseDir == "" {
+		return fmt.Errorf("source.base_dir is required when source.projects is configured")
+	}
+
+	for key, proj := range c.Source.Projects {
+		if len(proj.Repos) == 0 {
+			return fmt.Errorf("source.projects.%s: at least one repo is required", key)
+		}
+		for i, repo := range proj.Repos {
+			if repo.URL == "" {
+				return fmt.Errorf("source.projects.%s.repos[%d]: url is required", key, i)
+			}
+		}
+		if len(proj.Repos) > 1 {
+			seen := make(map[string]bool)
+			for i, repo := range proj.Repos {
+				if repo.Name == "" {
+					return fmt.Errorf("source.projects.%s.repos[%d]: name is required for multi-repo projects", key, i)
+				}
+				if seen[repo.Name] {
+					return fmt.Errorf("source.projects.%s: duplicate repo name %q", key, repo.Name)
+				}
+				seen[repo.Name] = true
+			}
+		}
 	}
 
 	return nil

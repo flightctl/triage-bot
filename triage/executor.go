@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"triage-bot/config"
+	"triage-bot/source"
 )
 
 const (
@@ -29,25 +30,30 @@ type TemplateData struct {
 	MetadataPath string
 	WorkflowPath string
 	ProjectKey   string
+	SourcePath   string
 }
 
 // Executor invokes the AI CLI to run a triage assessment.
 type Executor struct {
-	cfg    config.Config
-	tmpl   *template.Template
-	logger *zap.Logger
+	cfg       config.Config
+	tmpl      *template.Template
+	sourceMgr *source.Manager
+	logger    *zap.Logger
 }
 
-func NewExecutor(cfg config.Config, logger *zap.Logger) (*Executor, error) {
+// NewExecutor creates an executor. sourceMgr may be nil when no source
+// repos are configured.
+func NewExecutor(cfg config.Config, sourceMgr *source.Manager, logger *zap.Logger) (*Executor, error) {
 	tmpl, err := loadTemplate(cfg.Triage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load task template: %w", err)
 	}
 
 	return &Executor{
-		cfg:    cfg,
-		tmpl:   tmpl,
-		logger: logger,
+		cfg:       cfg,
+		tmpl:      tmpl,
+		sourceMgr: sourceMgr,
+		logger:    logger,
 	}, nil
 }
 
@@ -90,6 +96,22 @@ func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string
 		MetadataPath: metadataPath,
 		WorkflowPath: e.cfg.Triage.WorkflowPath,
 		ProjectKey:   projectKey,
+	}
+
+	if e.sourceMgr != nil && e.sourceMgr.HasProject(projectKey) {
+		if _, cloneErr := e.sourceMgr.EnsureCloned(ctx, projectKey); cloneErr != nil {
+			e.logger.Warn("Source repo unavailable, falling back to Jira-only assessment",
+				zap.String("project", projectKey),
+				zap.Error(cloneErr))
+		} else if wtPath, cleanup, wtErr := e.sourceMgr.Worktree(ctx, projectKey, issueKey); wtErr != nil {
+			e.logger.Warn("Failed to create worktree, falling back to Jira-only assessment",
+				zap.String("issue", issueKey),
+				zap.Error(wtErr))
+		} else {
+			defer cleanup()
+			data.SourcePath = wtPath
+			workDir = wtPath
+		}
 	}
 
 	var buf bytes.Buffer
