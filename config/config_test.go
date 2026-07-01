@@ -456,6 +456,48 @@ source:
 `,
 			wantErr: "source.projects.PROJ: duplicate repo name \"backend\"",
 		},
+		{
+			name: "multi-repo dot name",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - name: "."
+          url: https://github.com/org/backend.git
+        - name: frontend
+          url: https://github.com/org/frontend.git
+`,
+			wantErr: `name "." is not a safe path basename`,
+		},
+		{
+			name: "multi-repo traversal name",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - name: "../repo"
+          url: https://github.com/org/backend.git
+        - name: frontend
+          url: https://github.com/org/frontend.git
+`,
+			wantErr: `name "../repo" is not a safe path basename`,
+		},
+		{
+			name: "multi-repo slash in name",
+			source: `
+source:
+  projects:
+    PROJ:
+      repos:
+        - name: "repo/sub"
+          url: https://github.com/org/backend.git
+        - name: frontend
+          url: https://github.com/org/frontend.git
+`,
+			wantErr: `name "repo/sub" is not a safe path basename`,
+		},
 	}
 
 	for _, tt := range tests {
