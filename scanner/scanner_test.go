@@ -156,6 +156,122 @@ func TestBuildStaleJQL(t *testing.T) {
 	}
 }
 
+func TestScanUntriaged(t *testing.T) {
+	baseCfg := config.Config{
+		Jira: config.JiraConfig{
+			ProjectKeys: []string{"OSAC"},
+			MaxResults:  100,
+		},
+		Triage: config.TriageConfig{
+			AutoFixLabel:      "jira-autofix",
+			MissingInfoLabel:  "jira-triage-missing-info",
+			NotFixableLabel:   "jira-triage-not-fixable",
+			StaleLabel:        "jira-triage-stale",
+			ProgressionLabels: []string{"jira-autofix-merged"},
+		},
+	}
+
+	t.Run("skips when stale_label is empty", func(t *testing.T) {
+		mock := &mockJiraClient{}
+		cfg := baseCfg
+		cfg.Triage.StaleLabel = ""
+		s := &Scanner{jiraClient: mock, cfg: cfg, logger: zap.NewNop()}
+
+		s.scanUntriaged(context.Background())
+
+		if mock.searchCalls != 0 {
+			t.Error("expected no Jira calls when stale_label is empty")
+		}
+	})
+
+	t.Run("adds stale label to untriaged issues", func(t *testing.T) {
+		mock := &mockJiraClient{
+			searchResults: &jira.JiraSearchResponse{
+				Issues: []jira.JiraIssue{{Key: "OSAC-100"}, {Key: "OSAC-101"}},
+				IsLast: true,
+			},
+		}
+		s := &Scanner{jiraClient: mock, cfg: baseCfg, logger: zap.NewNop()}
+
+		s.scanUntriaged(context.Background())
+
+		if len(mock.addLabelCalls) != 2 {
+			t.Fatalf("expected 2 AddLabel calls, got %d", len(mock.addLabelCalls))
+		}
+		if mock.addLabelCalls[0].label != "jira-triage-stale" || mock.addLabelCalls[1].label != "jira-triage-stale" {
+			t.Errorf("unexpected labels: %+v", mock.addLabelCalls)
+		}
+		if len(mock.removeCalls) > 0 {
+			t.Error("expected no RemoveLabel calls for untriaged scan")
+		}
+	})
+
+	t.Run("continues on AddLabel error", func(t *testing.T) {
+		mock := &mockJiraClient{
+			searchResults: &jira.JiraSearchResponse{
+				Issues: []jira.JiraIssue{{Key: "OSAC-300"}, {Key: "OSAC-301"}},
+				IsLast: true,
+			},
+			addLabelErr: fmt.Errorf("503 Service Unavailable"),
+		}
+		s := &Scanner{jiraClient: mock, cfg: baseCfg, logger: zap.NewNop()}
+
+		s.scanUntriaged(context.Background())
+
+		if len(mock.addLabelCalls) != 2 {
+			t.Errorf("expected 2 AddLabel attempts, got %d", len(mock.addLabelCalls))
+		}
+	})
+
+	t.Run("search error aborts gracefully", func(t *testing.T) {
+		mock := &mockJiraClient{searchErr: fmt.Errorf("connection refused")}
+		s := &Scanner{jiraClient: mock, cfg: baseCfg, logger: zap.NewNop()}
+
+		s.scanUntriaged(context.Background())
+
+		if len(mock.addLabelCalls) > 0 {
+			t.Error("expected no label calls when search fails")
+		}
+	})
+
+	t.Run("dry run does not mutate", func(t *testing.T) {
+		mock := &mockJiraClient{
+			searchResults: &jira.JiraSearchResponse{
+				Issues: []jira.JiraIssue{{Key: "OSAC-200"}},
+				IsLast: true,
+			},
+		}
+		cfg := baseCfg
+		cfg.DryRun = true
+		s := &Scanner{jiraClient: mock, cfg: cfg, logger: zap.NewNop()}
+
+		s.scanUntriaged(context.Background())
+
+		if len(mock.addLabelCalls) > 0 {
+			t.Error("expected no label mutations in dry run")
+		}
+	})
+}
+
+func TestBuildUntriagedJQL(t *testing.T) {
+	s := &Scanner{cfg: config.Config{
+		Jira: config.JiraConfig{ProjectKeys: []string{"OSAC"}},
+		Triage: config.TriageConfig{
+			AutoFixLabel:      "jira-autofix",
+			MissingInfoLabel:  "jira-triage-missing-info",
+			NotFixableLabel:   "",
+			StaleLabel:        "jira-triage-stale",
+			ProgressionLabels: []string{"jira-autofix-merged"},
+		},
+	}}
+
+	got := s.buildUntriagedJQL([]string{"jira-autofix", "jira-triage-missing-info", "jira-triage-stale", "jira-autofix-merged"})
+	want := `project IN ("OSAC") AND issuetype = Bug AND statusCategory = Done AND (labels is EMPTY OR labels NOT IN ("jira-autofix", "jira-triage-missing-info", "jira-triage-stale", "jira-autofix-merged")) ORDER BY key ASC`
+	if got != want {
+		t.Errorf("buildUntriagedJQL() =\n  %s\nwant:\n  %s", got, want)
+	}
+}
+
 func TestScanStale(t *testing.T) {
 	baseCfg := config.Config{
 		Jira: config.JiraConfig{
