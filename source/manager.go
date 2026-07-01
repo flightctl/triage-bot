@@ -87,12 +87,12 @@ func (m *Manager) Worktree(ctx context.Context, projectKey, issueKey string) (st
 		return "", nil, fmt.Errorf("no source config for project %s", projectKey)
 	}
 
-	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", issueKey)
+	worktreeBase := filepath.Join(m.cfg.BaseDir, ".worktrees", filepath.Clean(issueKey))
 	if err := os.MkdirAll(worktreeBase, 0o750); err != nil {
 		return "", nil, fmt.Errorf("failed to create worktree base: %w", err)
 	}
 
-	projectDir := filepath.Join(m.cfg.BaseDir, projectKey)
+	projectDir := filepath.Join(m.cfg.BaseDir, filepath.Clean(projectKey))
 	isMultiRepo := len(projCfg.Repos) > 1
 
 	if isMultiRepo {
@@ -138,7 +138,7 @@ func (m *Manager) getOrCreateState(projectKey string) *cloneState {
 }
 
 func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg config.SourceProjectConfig) (string, error) {
-	projectDir := filepath.Join(m.cfg.BaseDir, projectKey)
+	projectDir := filepath.Join(m.cfg.BaseDir, filepath.Clean(projectKey))
 	isMultiRepo := len(projCfg.Repos) > 1
 
 	if isMultiRepo {
@@ -156,7 +156,7 @@ func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg c
 		}
 
 		for _, repo := range projCfg.Repos {
-			dest := filepath.Join(projectDir, repo.Name)
+			dest := filepath.Join(projectDir, filepath.Clean(repo.Name))
 			m.logger.Info("Cloning sub-repo",
 				zap.String("project", projectKey),
 				zap.String("name", repo.Name),
@@ -181,7 +181,7 @@ func (m *Manager) cloneProject(ctx context.Context, projectKey string, projCfg c
 func (m *Manager) updateProject(ctx context.Context, projectKey string, projCfg config.SourceProjectConfig, projectDir string) error {
 	if len(projCfg.Repos) > 1 {
 		for _, repo := range projCfg.Repos {
-			dest := filepath.Join(projectDir, repo.Name)
+			dest := filepath.Join(projectDir, filepath.Clean(repo.Name))
 			if err := m.updateRepo(ctx, dest, refOrDefault(repo.Ref)); err != nil {
 				m.logger.Warn("Failed to update sub-repo",
 					zap.String("project", projectKey),
