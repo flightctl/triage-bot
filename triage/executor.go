@@ -77,17 +77,18 @@ func loadTemplate(cfg config.TriageConfig) (*template.Template, error) {
 func (e *Executor) Run(ctx context.Context, issueKey, projectKey string) (string, *Metadata, error) {
 	outputPath := filepath.Join(outputBase, issueKey+".md")
 	metadataPath := filepath.Join(outputBase, issueKey+".meta.json")
-	workDir := filepath.Join(workspaceBase, issueKey)
+	workspaceDir := filepath.Join(workspaceBase, issueKey)
+	workDir := workspaceDir
 
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
 		return "", nil, fmt.Errorf("failed to create workspace: %w", err)
 	}
 	if err := os.MkdirAll(outputBase, 0o755); err != nil {
 		return "", nil, fmt.Errorf("failed to create output dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(workDir) }()   // best-effort cleanup
-	defer func() { _ = os.Remove(outputPath) }()   // best-effort cleanup
-	defer func() { _ = os.Remove(metadataPath) }() // best-effort cleanup
+	defer func() { _ = os.RemoveAll(workspaceDir) }() // best-effort cleanup
+	defer func() { _ = os.Remove(outputPath) }()      // best-effort cleanup
+	defer func() { _ = os.Remove(metadataPath) }()    // best-effort cleanup
 
 	data := TemplateData{
 		IssueKey:     issueKey,

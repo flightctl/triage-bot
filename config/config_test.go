@@ -325,6 +325,34 @@ source:
 	}
 }
 
+func TestLoadConfig_SourceKeyNormalization(t *testing.T) {
+	content := `
+jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
+ai: {provider: claude, claude: {api_key: "sk-test"}}
+source:
+  projects:
+    proj:
+      repos:
+        - url: https://github.com/org/proj.git
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := cfg.Source.Projects["proj"]; ok {
+		t.Error("lowercase key 'proj' should not exist after normalization")
+	}
+	if _, ok := cfg.Source.Projects["PROJ"]; !ok {
+		t.Error("uppercase key 'PROJ' should exist after normalization")
+	}
+}
+
 func TestLoadConfig_SourceMultiRepo(t *testing.T) {
 	content := `
 jira: {base_url: "http://x", username: "u", api_token: "t", project_keys: ["PROJ"]}
