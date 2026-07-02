@@ -15,6 +15,26 @@ config:
     claude:
       vertex_project_id: "itpc-gcp-eco-eng-claude"
 
+  source:
+    projects:
+      OSAC:
+        root_repo: https://github.com/osac-project/osac-workspace
+        repos:
+          - name: fulfillment-service
+            url: https://github.com/osac-project/fulfillment-service
+          - name: osac-operator
+            url: https://github.com/osac-project/osac-operator
+          - name: osac-aap
+            url: https://github.com/osac-project/osac-aap
+          - name: osac-installer
+            url: https://github.com/osac-project/osac-installer
+          - name: osac-test-infra
+            url: https://github.com/osac-project/osac-test-infra
+          - name: enhancement-proposals
+            url: https://github.com/osac-project/enhancement-proposals
+          - name: osac-docs
+            url: https://github.com/osac-project/docs
+
   triage:
     auto_fix_label: "jira-autofix"
     missing_info_label: "jira-triage-missing-info"

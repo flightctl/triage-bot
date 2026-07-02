@@ -27,9 +27,12 @@ WORKDIR /app
 COPY --from=builder /app/triage-bot .
 COPY --from=builder /app/task.tmpl .
 
-RUN mkdir -p /opt/workflows /tmp/triage-workspace /tmp/triage-output /home/appuser && \
-    chown -R 1001:0 /app /opt/workflows /tmp/triage-workspace /tmp/triage-output /home/appuser && \
-    chmod -R g=u /app /opt/workflows /tmp/triage-workspace /tmp/triage-output /home/appuser
+RUN mkdir -p /opt/workflows /tmp/triage-workspace /tmp/triage-output \
+             /var/lib/triage-bot/repos /home/appuser && \
+    chown -R 1001:0 /app /opt/workflows /tmp/triage-workspace /tmp/triage-output \
+                    /var/lib/triage-bot/repos /home/appuser && \
+    chmod -R g=u /app /opt/workflows /tmp/triage-workspace /tmp/triage-output \
+                 /var/lib/triage-bot/repos /home/appuser
 
 ENV HOME=/home/appuser
 ENV SHELL=/bin/bash
