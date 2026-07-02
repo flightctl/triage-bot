@@ -253,7 +253,7 @@ The `source/` package (`source/manager.go`) manages per-project source repo clon
 - **Shared clones**: One clone per project key under `source.base_dir` (default `/var/lib/triage-bot/repos`). Persists across scan cycles.
 - **Git worktrees**: Each issue gets an isolated worktree created from the shared clone. The AI's working directory is set to the worktree. Worktrees are cleaned up after the assessment completes.
 - **Multi-repo support**: Projects with multiple repos get per-sub-repo clones under `<base_dir>/<PROJECT>/<repo.name>/` and per-sub-repo worktrees under the issue's worktree directory.
-- **Token auth**: Optional `source.token` is embedded in the clone URL for private repos.
+- **Public repos only**: Private repo auth is not supported. All configured source repos must be publicly cloneable.
 
 Override via `triage.task_template` (inline) or `triage.task_template_path` (file path).
 
