@@ -6,6 +6,7 @@ config:
 
   jira:
     username: "osac-automation@redhat.com"
+    bot_username: "osac-dev-bot"
     project_keys:
       - OSAC
     excluded_components:
