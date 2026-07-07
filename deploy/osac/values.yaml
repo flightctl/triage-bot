@@ -10,6 +10,7 @@ config:
       - OSAC
     excluded_components:
       - "Enclave"
+      - "agentic-sdlc"
 
   ai:
     claude:
