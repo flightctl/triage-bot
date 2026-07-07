@@ -321,7 +321,7 @@ func (s *Scanner) buildJQL() string {
 		for i, c := range s.cfg.Jira.ExcludedComponents {
 			comps[i] = fmt.Sprintf("%q", c)
 		}
-		jql += fmt.Sprintf(" AND component NOT IN (%s)", strings.Join(comps, ", "))
+		jql += fmt.Sprintf(" AND (component is EMPTY OR component NOT IN (%s))", strings.Join(comps, ", "))
 	}
 
 	jql += " ORDER BY key ASC"

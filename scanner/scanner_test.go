@@ -65,7 +65,7 @@ func TestBuildJQL(t *testing.T) {
 					ExcludedComponents: []string{"Enclave"},
 				},
 			},
-			wantJQL: `project IN ("OSAC") AND issuetype = Bug AND statusCategory != Done AND component NOT IN ("Enclave") ORDER BY key ASC`,
+			wantJQL: `project IN ("OSAC") AND issuetype = Bug AND statusCategory != Done AND (component is EMPTY OR component NOT IN ("Enclave")) ORDER BY key ASC`,
 		},
 		{
 			name: "multiple excluded components",
@@ -75,7 +75,7 @@ func TestBuildJQL(t *testing.T) {
 					ExcludedComponents: []string{"Enclave", "Docs"},
 				},
 			},
-			wantJQL: `project IN ("OSAC") AND issuetype = Bug AND statusCategory != Done AND component NOT IN ("Enclave", "Docs") ORDER BY key ASC`,
+			wantJQL: `project IN ("OSAC") AND issuetype = Bug AND statusCategory != Done AND (component is EMPTY OR component NOT IN ("Enclave", "Docs")) ORDER BY key ASC`,
 		},
 	}
 
