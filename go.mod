@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/spf13/viper v1.21.0
+	github.com/yuin/goldmark v1.8.4
 	go.uber.org/zap v1.28.0
 )
 

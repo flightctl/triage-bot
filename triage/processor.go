@@ -3,7 +3,6 @@ package triage
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,7 +16,7 @@ const (
 	// assessmentVersion is bumped when a bot or workflow change warrants
 	// re-assessing all issues. Existing comments with an older (or missing)
 	// version trigger ActionUpdate on the next scan cycle.
-	assessmentVersion = "2"
+	assessmentVersion = "3"
 
 	markerPrefix  = "triage-bot | "
 	versionPrefix = "v:"
@@ -116,7 +115,7 @@ func (p *Processor) Process(ctx context.Context, issue jira.JiraIssue) error {
 func (p *Processor) postComment(ctx context.Context, key string, action Action, existingCommentID, assessment, descHash string) error {
 	adfBody, adfErr := buildADFComment(assessment, descHash)
 	if adfErr != nil {
-		p.logger.Warn("Failed to parse ADF output, falling back to plain text",
+		p.logger.Warn("Failed to convert assessment to ADF, falling back to plain text",
 			zap.String("issue", key),
 			zap.Error(adfErr))
 	}
@@ -288,7 +287,7 @@ func containsLabel(labels []string, target string) bool {
 }
 
 // trimInvisible strips BOM (U+FEFF) and other zero-width / invisible
-// characters that LLM tool chains may emit but that break json.Unmarshal.
+// characters that LLM tool chains may emit at the boundaries of output.
 func trimInvisible(s string) string {
 	return strings.TrimFunc(s, func(r rune) bool {
 		if r <= ' ' {
@@ -308,39 +307,16 @@ func trimInvisible(s string) string {
 	})
 }
 
-// stripCodeFences removes a single layer of markdown code fences
-// (``` or ```json etc.) that LLMs commonly wrap around JSON output.
-func stripCodeFences(s string) string {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "```") {
-		return s
-	}
-	first := strings.IndexByte(s, '\n')
-	if first < 0 {
-		return s
-	}
-	last := strings.LastIndex(s, "```")
-	if last <= first {
-		return s
-	}
-	return strings.TrimSpace(s[first+1 : last])
-}
-
-// buildADFComment parses the AI's ADF JSON output and appends the
-// description hash footer as ADF nodes. If parsing fails, returns an
-// error so the caller can fall back to plain text.
+// buildADFComment converts the AI's markdown assessment to an ADF
+// document and appends the description hash footer as ADF nodes.
+// Returns an error for empty input so the caller can fall back to
+// plain text.
 func buildADFComment(assessment, hash string) (map[string]any, error) {
 	cleaned := trimInvisible(assessment)
-	cleaned = stripCodeFences(cleaned)
-	cleaned = trimInvisible(cleaned)
 
-	var adf map[string]any
-	if err := json.Unmarshal([]byte(cleaned), &adf); err != nil {
-		return nil, fmt.Errorf("invalid ADF JSON: %w", err)
-	}
-
-	if adf["type"] != "doc" {
-		return nil, fmt.Errorf("ADF missing top-level type:doc")
+	adf, err := jira.MarkdownToADF(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("markdown to ADF: %w", err)
 	}
 
 	content, ok := adf["content"].([]any)

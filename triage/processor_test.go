@@ -35,7 +35,7 @@ func TestAppendHashFooter(t *testing.T) {
 		t.Errorf("extractHash roundtrip = %q, want %q", got, "abc123def456")
 	}
 
-	expected := "Assessment text here\n\n---\n_triage-bot | v:2 | desc:abc123def456_\n"
+	expected := "Assessment text here\n\n---\n_triage-bot | v:3 | desc:abc123def456_\n"
 	if result != expected {
 		t.Errorf("appendHashFooter =\n%q\nwant\n%q", result, expected)
 	}
@@ -150,54 +150,75 @@ func TestFindBotComment_BotWithoutMarker(t *testing.T) {
 }
 
 func TestBuildADFComment_Valid(t *testing.T) {
-	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
-	result, err := buildADFComment(adf, "abc123def456")
+	md := "# Heading\n\nSome assessment text."
+	result, err := buildADFComment(md, "abc123def456")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	content := result["content"].([]any)
-	// original paragraph + rule + hash footer = 3 nodes
-	if len(content) != 3 {
-		t.Fatalf("content length = %d, want 3", len(content))
+	// heading + paragraph + rule + hash footer = 4 nodes
+	if len(content) != 4 {
+		t.Fatalf("content length = %d, want 4", len(content))
 	}
 
-	rule := content[1].(map[string]any)
+	heading := content[0].(map[string]any)
+	if heading["type"] != "heading" {
+		t.Errorf("first node type = %q, want 'heading'", heading["type"])
+	}
+
+	para := content[1].(map[string]any)
+	if para["type"] != "paragraph" {
+		t.Errorf("second node type = %q, want 'paragraph'", para["type"])
+	}
+
+	rule := content[2].(map[string]any)
 	if rule["type"] != "rule" {
-		t.Errorf("second node type = %q, want 'rule'", rule["type"])
+		t.Errorf("third node type = %q, want 'rule'", rule["type"])
 	}
 
-	footer := content[2].(map[string]any)
+	footer := content[3].(map[string]any)
 	footerContent := footer["content"].([]any)
 	textNode := footerContent[0].(map[string]any)
-	if got := textNode["text"].(string); got != "triage-bot | v:2 | desc:abc123def456" {
-		t.Errorf("footer text = %q, want %q", got, "triage-bot | v:2 | desc:abc123def456")
+	if got := textNode["text"].(string); got != "triage-bot | v:3 | desc:abc123def456" {
+		t.Errorf("footer text = %q, want %q", got, "triage-bot | v:3 | desc:abc123def456")
 	}
 }
 
-func TestBuildADFComment_InvalidJSON(t *testing.T) {
-	_, err := buildADFComment("not json", "abc123")
+func TestBuildADFComment_EmptyInput(t *testing.T) {
+	_, err := buildADFComment("", "abc123def456")
 	if err == nil {
-		t.Error("expected error for invalid JSON")
+		t.Error("expected error for empty input")
 	}
 }
 
-func TestBuildADFComment_MissingDocType(t *testing.T) {
-	_, err := buildADFComment(`{"type":"paragraph","content":[]}`, "abc123")
+func TestBuildADFComment_WhitespaceOnly(t *testing.T) {
+	_, err := buildADFComment("   \n\n   ", "abc123def456")
 	if err == nil {
-		t.Error("expected error for missing doc type")
+		t.Error("expected error for whitespace-only input")
+	}
+}
+
+func TestBuildADFComment_BOM(t *testing.T) {
+	md := "\uFEFF# Test\n\nSome text."
+	result, err := buildADFComment(md, "abc123def456")
+	if err != nil {
+		t.Fatalf("unexpected error for BOM-prefixed markdown: %v", err)
+	}
+	if result["type"] != "doc" {
+		t.Errorf("type = %q, want 'doc'", result["type"])
 	}
 }
 
 func TestTrimInvisible(t *testing.T) {
-	raw := `{"type":"doc"}`
+	raw := "# Assessment"
 
 	bom := "\uFEFF"
 	zws := "\u200B"
 	zwnj := "\u200C"
 	zwj := "\u200D"
 	wj := "\u2060"
-	nbsp := "\u00A0"
+	nbsp := " "
 
 	tests := []struct {
 		name  string
@@ -226,78 +247,8 @@ func TestTrimInvisible(t *testing.T) {
 	}
 }
 
-func TestBuildADFComment_BOM(t *testing.T) {
-	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
-	bommed := "\uFEFF" + adf
-	result, err := buildADFComment(bommed, "abc123def456")
-	if err != nil {
-		t.Fatalf("unexpected error for BOM-prefixed JSON: %v", err)
-	}
-	if result["type"] != "doc" {
-		t.Errorf("type = %q, want 'doc'", result["type"])
-	}
-}
-
-func TestStripCodeFences(t *testing.T) {
-	raw := `{"type":"doc"}`
-
-	// ADF containing a codeBlock with triple backticks inside the text.
-	embeddedJSON := `{"type":"doc","content":[{"type":"codeBlock","content":[{"type":"text","text":"` +
-		"```go\nfmt.Println()\n```" +
-		`"}]}]}`
-
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"no fences", raw, raw},
-		{"bare fences", "```\n" + raw + "\n```", raw},
-		{"json tag", "```json\n" + raw + "\n```", raw},
-		{"adf tag", "```adf\n" + raw + "\n```", raw},
-		{"surrounding whitespace", "  ```json\n" + raw + "\n```  ", raw},
-		{"trailing newline after close", "```json\n" + raw + "\n```\n", raw},
-		{"no closing fence", "```json\n" + raw, "```json\n" + raw},
-		{"embedded backticks", "```json\n" + embeddedJSON + "\n```", embeddedJSON},
-		{"crlf line endings", "```json\r\n" + raw + "\r\n```", raw},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := stripCodeFences(tt.input)
-			if got != tt.want {
-				t.Errorf("stripCodeFences() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestBuildADFComment_Fenced(t *testing.T) {
-	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
-	fenced := "```json\n" + adf + "\n```"
-	result, err := buildADFComment(fenced, "abc123def456")
-	if err != nil {
-		t.Fatalf("unexpected error for fenced JSON: %v", err)
-	}
-	if result["type"] != "doc" {
-		t.Errorf("type = %q, want 'doc'", result["type"])
-	}
-}
-
-func TestBuildADFComment_BOMBeforeFence(t *testing.T) {
-	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
-	input := "\uFEFF```json\n" + adf + "\n```"
-	result, err := buildADFComment(input, "abc123def456")
-	if err != nil {
-		t.Fatalf("unexpected error for BOM-prefixed fenced JSON: %v", err)
-	}
-	if result["type"] != "doc" {
-		t.Errorf("type = %q, want 'doc'", result["type"])
-	}
-}
-
 func TestADFHashRoundtrip(t *testing.T) {
-	assessment := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"hello"}]}]}`
+	assessment := "# Assessment\n\nSome analysis text."
 	hash := "abc123def456"
 
 	adf, err := buildADFComment(assessment, hash)
@@ -336,8 +287,8 @@ func TestExtractVersion(t *testing.T) {
 	}{
 		{
 			name: "new format",
-			body: "text\n---\n_triage-bot | v:2 | desc:abc123def456_\n",
-			want: "2",
+			body: "text\n---\n_triage-bot | v:3 | desc:abc123def456_\n",
+			want: "3",
 		},
 		{
 			name: "legacy format (no version)",
@@ -374,7 +325,7 @@ func TestExtractHash_NewFormat(t *testing.T) {
 	}{
 		{
 			name: "new format with version",
-			body: "text\n---\n_triage-bot | v:2 | desc:abc123def456_\n",
+			body: "text\n---\n_triage-bot | v:3 | desc:abc123def456_\n",
 			want: "abc123def456",
 		},
 		{

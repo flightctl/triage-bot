@@ -20,19 +20,15 @@ are available from the configured MCP server.
 
 After completing the assessment, write two output files:
 
-1. **{{.OutputPath}}** — the full triage assessment as an Atlassian Document
-   Format (ADF) JSON object. The top-level structure must be:
-   ```json
-   {
-     "type": "doc",
-     "version": 1,
-     "content": [ ... ]
-   }
-   ```
-   Use proper ADF node types: heading, paragraph, table, bulletList,
-   orderedList, codeBlock, rule, etc. Use marks for bold, italic, code,
-   and links. Do not include the "On Completion" section.
-   Write ONLY the raw JSON — no markdown fences, no extra text.
+1. **{{.OutputPath}}** — the full triage assessment in **Markdown** format.
+   Use standard Markdown: headings (#, ##, ###), paragraphs, bold (**text**),
+   italic (*text*), inline code (`code`), fenced code blocks (```language),
+   bullet lists (-), ordered lists (1.), tables (| col | col |), and
+   horizontal rules (---).
+   Use Markdown headings (##, ###) for sections — do not use bold text as a
+   substitute for headings.
+   Do not include the "On Completion" section.
+   Write ONLY the assessment content — no wrapping, no extra instructions.
 
 2. **{{.MetadataPath}}** — a JSON metadata file with this structure:
    ```json
