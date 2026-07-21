@@ -107,6 +107,9 @@ func (w *adfWalker) walk(n ast.Node, entering bool) (ast.WalkStatus, error) {
 	case *ast.Paragraph:
 		return w.handleParagraph(node, entering)
 
+	case *ast.TextBlock:
+		return w.handleBlock(entering, "paragraph", nil)
+
 	case *ast.ThematicBreak:
 		if entering {
 			w.append(map[string]any{"type": "rule"})

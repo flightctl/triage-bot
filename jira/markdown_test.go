@@ -282,6 +282,11 @@ func TestMarkdownToADF_BulletList(t *testing.T) {
 	}
 	for _, item := range items {
 		assertNodeType(t, item, "listItem")
+		itemContent := item.(map[string]any)["content"].([]any)
+		if len(itemContent) < 1 {
+			t.Fatal("listItem has no content")
+		}
+		assertNodeType(t, itemContent[0], "paragraph")
 	}
 }
 
@@ -294,6 +299,20 @@ func TestMarkdownToADF_OrderedList(t *testing.T) {
 
 	content := docContent(t, adf)
 	assertNodeType(t, content[0], "orderedList")
+
+	list := content[0].(map[string]any)
+	items := list["content"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("list items = %d, want 3", len(items))
+	}
+	for _, item := range items {
+		assertNodeType(t, item, "listItem")
+		itemContent := item.(map[string]any)["content"].([]any)
+		if len(itemContent) < 1 {
+			t.Fatal("listItem has no content")
+		}
+		assertNodeType(t, itemContent[0], "paragraph")
+	}
 }
 
 func TestMarkdownToADF_NestedList(t *testing.T) {
