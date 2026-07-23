@@ -36,6 +36,10 @@ config:
             url: https://github.com/osac-project/enhancement-proposals
           - name: osac-docs
             url: https://github.com/osac-project/docs
+          - name: osac-ui
+            url: https://github.com/osac-project/osac-ui
+          - name: bare-metal-fulfillment-operator
+            url: https://github.com/osac-project/bare-metal-fulfillment-operator
 
   triage:
     auto_fix_label: "jira-autofix"
