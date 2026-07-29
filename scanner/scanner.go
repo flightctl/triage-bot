@@ -3,7 +3,6 @@ package scanner
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ import (
 type ScannerJiraClient interface {
 	SearchTickets(ctx context.Context, jql string, maxResults int, nextPageToken string) (*jira.JiraSearchResponse, error)
 	AddLabel(ctx context.Context, key, label string) error
-	RemoveLabel(ctx context.Context, key, label string) error
 }
 
 // IssueProcessor processes a single Jira issue.
@@ -73,8 +71,7 @@ func (s *Scanner) run(ctx context.Context) {
 	defer close(s.done)
 
 	s.scan(ctx)
-	s.scanStale(ctx)
-	s.scanUntriaged(ctx)
+	s.scanInactive(ctx)
 
 	interval := time.Duration(s.cfg.Jira.IntervalSeconds) * time.Second
 	ticker := time.NewTicker(interval)
@@ -87,8 +84,7 @@ func (s *Scanner) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.scan(ctx)
-			s.scanStale(ctx)
-			s.scanUntriaged(ctx)
+			s.scanInactive(ctx)
 		}
 	}
 }
@@ -158,151 +154,70 @@ func (s *Scanner) scan(ctx context.Context) {
 	wg.Wait()
 }
 
-func (s *Scanner) scanStale(ctx context.Context) {
+func (s *Scanner) scanInactive(ctx context.Context) {
 	staleLabel := s.cfg.Triage.StaleLabel
 	if staleLabel == "" {
 		return
 	}
 
-	autofixLabel := s.cfg.Triage.AutoFixLabel
-	if autofixLabel == "" {
+	if s.cfg.Triage.StaleDays <= 0 {
 		return
 	}
 
-	if len(s.cfg.Triage.ProgressionLabels) == 0 {
-		s.logger.Warn("Stale label configured but progression_labels is empty, skipping stale scan")
-		return
-	}
-
-	jql := s.buildStaleJQL()
-	s.logger.Info("Scanning for stale issues", zap.String("jql", jql))
+	jql := s.buildInactiveJQL()
+	s.logger.Info("Scanning for inactive open bugs", zap.String("jql", jql))
 
 	allIssues, err := s.searchAll(ctx, jql)
 	if err != nil {
-		s.logger.Error("Failed to search Jira for stale issues", zap.Error(err))
-		return
-	}
-
-	if len(allIssues) == 0 {
-		return
-	}
-
-	s.logger.Info("Found stale issues", zap.Int("count", len(allIssues)))
-
-	// Label mutations are lightweight Jira API calls (no AI invocation),
-	// so we skip the concurrency semaphore used by scan().
-	for _, issue := range allIssues {
-		if ctx.Err() != nil {
-			break
-		}
-
-		if s.cfg.DryRun {
-			s.logger.Info("DRY RUN: would mark stale",
-				zap.String("issue", issue.Key),
-				zap.String("add", staleLabel),
-				zap.String("remove", autofixLabel))
-			continue
-		}
-
-		if err := s.jiraClient.AddLabel(ctx, issue.Key, staleLabel); err != nil {
-			s.logger.Error("Failed to add stale label",
-				zap.String("issue", issue.Key),
-				zap.Error(err))
-			continue
-		}
-		if err := s.jiraClient.RemoveLabel(ctx, issue.Key, autofixLabel); err != nil {
-			s.logger.Error("Failed to remove autofix label from stale issue",
-				zap.String("issue", issue.Key),
-				zap.Error(err))
-			continue
-		}
-		s.logger.Info("Marked issue as stale",
-			zap.String("issue", issue.Key))
-	}
-}
-
-func (s *Scanner) buildStaleJQL() string {
-	projects := make([]string, len(s.cfg.Jira.ProjectKeys))
-	for i, k := range s.cfg.Jira.ProjectKeys {
-		projects[i] = fmt.Sprintf("%q", k)
-	}
-
-	autofixLabel := s.cfg.Triage.AutoFixLabel
-	staleLabel := s.cfg.Triage.StaleLabel
-
-	allExcluded := slices.Concat(s.cfg.Triage.ProgressionLabels, []string{staleLabel})
-	quoted := make([]string, len(allExcluded))
-	for i, l := range allExcluded {
-		quoted[i] = fmt.Sprintf("%q", l)
-	}
-
-	return fmt.Sprintf(
-		"project IN (%s) AND issuetype = Bug AND statusCategory = Done AND labels = %q AND labels NOT IN (%s) ORDER BY key ASC",
-		strings.Join(projects, ", "),
-		autofixLabel,
-		strings.Join(quoted, ", "),
-	)
-}
-
-func (s *Scanner) scanUntriaged(ctx context.Context) {
-	staleLabel := s.cfg.Triage.StaleLabel
-	if staleLabel == "" {
-		return
-	}
-
-	var pipelineLabels []string
-	for _, l := range []string{s.cfg.Triage.AutoFixLabel, s.cfg.Triage.MissingInfoLabel, s.cfg.Triage.NotFixableLabel, staleLabel} {
-		if l != "" {
-			pipelineLabels = append(pipelineLabels, l)
-		}
-	}
-	pipelineLabels = append(pipelineLabels, s.cfg.Triage.ProgressionLabels...)
-
-	jql := s.buildUntriagedJQL(pipelineLabels)
-	s.logger.Info("Scanning for untriaged closed bugs", zap.String("jql", jql))
-
-	allIssues, err := s.searchAll(ctx, jql)
-	if err != nil {
-		s.logger.Error("Failed to search for untriaged bugs", zap.Error(err))
+		s.logger.Error("Failed to search for inactive bugs", zap.Error(err))
 		return
 	}
 	if len(allIssues) == 0 {
 		return
 	}
 
-	s.logger.Info("Found untriaged closed bugs", zap.Int("count", len(allIssues)))
+	s.logger.Info("Found inactive open bugs", zap.Int("count", len(allIssues)))
 	for _, issue := range allIssues {
 		if ctx.Err() != nil {
 			break
 		}
 		if s.cfg.DryRun {
-			s.logger.Info("DRY RUN: would add stale label to untriaged bug",
+			s.logger.Info("DRY RUN: would add stale label to inactive bug",
 				zap.String("issue", issue.Key), zap.String("label", staleLabel))
 			continue
 		}
 		if err := s.jiraClient.AddLabel(ctx, issue.Key, staleLabel); err != nil {
-			s.logger.Error("Failed to add stale label to untriaged bug",
+			s.logger.Error("Failed to add stale label to inactive bug",
 				zap.String("issue", issue.Key), zap.Error(err))
 			continue
 		}
-		s.logger.Info("Marked untriaged bug as stale", zap.String("issue", issue.Key))
+		s.logger.Info("Marked inactive bug as stale", zap.String("issue", issue.Key))
 	}
 }
 
-func (s *Scanner) buildUntriagedJQL(pipelineLabels []string) string {
+func (s *Scanner) buildInactiveJQL() string {
 	projects := make([]string, len(s.cfg.Jira.ProjectKeys))
 	for i, k := range s.cfg.Jira.ProjectKeys {
 		projects[i] = fmt.Sprintf("%q", k)
 	}
-	quoted := make([]string, len(pipelineLabels))
-	for i, l := range pipelineLabels {
-		quoted[i] = fmt.Sprintf("%q", l)
-	}
-	return fmt.Sprintf(
-		"project IN (%s) AND issuetype = Bug AND statusCategory = Done AND (labels is EMPTY OR labels NOT IN (%s)) ORDER BY key ASC",
+
+	jql := fmt.Sprintf(
+		`project IN (%s) AND issuetype = Bug AND status = %q AND updated <= "-%dd"`,
 		strings.Join(projects, ", "),
-		strings.Join(quoted, ", "),
+		s.cfg.Triage.StaleStatus,
+		s.cfg.Triage.StaleDays,
 	)
+
+	if len(s.cfg.Jira.ExcludedComponents) > 0 {
+		comps := make([]string, len(s.cfg.Jira.ExcludedComponents))
+		for i, c := range s.cfg.Jira.ExcludedComponents {
+			comps[i] = fmt.Sprintf("%q", c)
+		}
+		jql += fmt.Sprintf(" AND (component is EMPTY OR component NOT IN (%s))", strings.Join(comps, ", "))
+	}
+
+	jql += " ORDER BY key ASC"
+	return jql
 }
 
 func (s *Scanner) buildJQL() string {

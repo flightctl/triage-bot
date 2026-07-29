@@ -49,6 +49,12 @@ ai:
 	if cfg.Jira.BotUsername != "bot@example.com" {
 		t.Errorf("bot_username = %q, want %q", cfg.Jira.BotUsername, "bot@example.com")
 	}
+	if cfg.Triage.StaleDays != 0 {
+		t.Errorf("stale_days = %d, want 0 (disabled by default)", cfg.Triage.StaleDays)
+	}
+	if cfg.Triage.StaleStatus != "New" {
+		t.Errorf("stale_status = %q, want %q", cfg.Triage.StaleStatus, "New")
+	}
 }
 
 func TestLoadConfig_MissingRequired(t *testing.T) {
@@ -181,6 +187,40 @@ ai:
 	}
 	if cfg.Jira.APIToken != "file-token" {
 		t.Errorf("api_token = %q, want file value (no env override)", cfg.Jira.APIToken)
+	}
+}
+
+func TestLoadConfig_StaleEnvOverride(t *testing.T) {
+	content := `
+jira:
+  base_url: "https://example.com"
+  username: "user"
+  api_token: "token"
+  project_keys:
+    - PROJ
+ai:
+  provider: claude
+  claude:
+    api_key: "key"
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TRIAGE_BOT_TRIAGE_STALE_DAYS", "30")
+	t.Setenv("TRIAGE_BOT_TRIAGE_STALE_STATUS", "Open")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Triage.StaleDays != 30 {
+		t.Errorf("stale_days = %d, want 30 (env override)", cfg.Triage.StaleDays)
+	}
+	if cfg.Triage.StaleStatus != "Open" {
+		t.Errorf("stale_status = %q, want %q (env override)", cfg.Triage.StaleStatus, "Open")
 	}
 }
 

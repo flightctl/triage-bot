@@ -135,10 +135,12 @@ config:
     missing_info_label: "triage-missing-info"
     # -- Label applied when assessment is not AUTO_FIX or below threshold (set to "" to disable)
     not_fixable_label: "triage-not-fixable"
-    # -- Label applied to closed issues that had autofix but no progression (set to "" to disable)
+    # -- Label applied to inactive open bugs (set to "" to disable)
     stale_label: ""
-    # -- Autofix progression labels to exclude from stale detection (e.g., merged, review, rejected)
-    progression_labels: []
+    # -- Days of inactivity before an open bug is marked stale (0 = disabled)
+    stale_days: 0
+    # -- Jira status to filter for stale detection (e.g., "New", "Open")
+    stale_status: "New"
     # -- Path to a custom task template file (overrides built-in task.tmpl)
     task_template_path: ""
     # -- Inline task template (overrides task_template_path). Go template

@@ -43,7 +43,8 @@ config:
     missing_info_label: "triage-missing-info"
     not_fixable_label: "triage-not-fixable"
     stale_label: ""
-    progression_labels: []
+    stale_days: 0
+    stale_status: "New"
     import:
       repo: "https://github.com/flightctl/ai-workflows.git"
       ref: "main"
