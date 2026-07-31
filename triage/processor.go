@@ -16,7 +16,7 @@ const (
 	// assessmentVersion is bumped when a bot or workflow change warrants
 	// re-assessing all issues. Existing comments with an older (or missing)
 	// version trigger ActionUpdate on the next scan cycle.
-	assessmentVersion = "3"
+	assessmentVersion = "6"
 
 	markerPrefix  = "triage-bot | "
 	versionPrefix = "v:"
@@ -104,7 +104,9 @@ func (p *Processor) Process(ctx context.Context, issue jira.JiraIssue) error {
 		return fmt.Errorf("triage failed for %s: %w", key, err)
 	}
 
-	if err := p.postComment(ctx, key, action, existingCommentID, assessment, descHash); err != nil {
+	comment := formatMetadataHeader(key, meta) + assessment
+
+	if err := p.postComment(ctx, key, action, existingCommentID, comment, descHash); err != nil {
 		return err
 	}
 
@@ -378,6 +380,23 @@ func extractHash(body string) string {
 		return ""
 	}
 	return rest
+}
+
+// formatMetadataHeader builds the deterministic header prepended to every
+// triage comment: title, recommendation, and (for AUTO_FIX) the auto-fix
+// likelihood score.
+func formatMetadataHeader(key string, meta *Metadata) string {
+	header := "# " + key + " Triage Assessment\n\n"
+	if meta == nil || meta.Recommendation == "" {
+		return header
+	}
+
+	header += "- **Recommendation**: " + meta.Recommendation + "\n"
+	if meta.Recommendation == "AUTO_FIX" && meta.AutoFixLikelihood != nil {
+		header += fmt.Sprintf("- **Auto-Fix Likelihood**: %d\n", *meta.AutoFixLikelihood)
+	}
+	header += "\n---\n\n"
+	return header
 }
 
 func extractVersion(body string) string {
