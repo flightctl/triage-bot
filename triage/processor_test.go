@@ -35,7 +35,7 @@ func TestAppendHashFooter(t *testing.T) {
 		t.Errorf("extractHash roundtrip = %q, want %q", got, "abc123def456")
 	}
 
-	expected := "Assessment text here\n\n---\n_triage-bot | v:3 | desc:abc123def456_\n"
+	expected := "Assessment text here\n\n---\n_triage-bot | v:6 | desc:abc123def456_\n"
 	if result != expected {
 		t.Errorf("appendHashFooter =\n%q\nwant\n%q", result, expected)
 	}
@@ -180,8 +180,8 @@ func TestBuildADFComment_Valid(t *testing.T) {
 	footer := content[3].(map[string]any)
 	footerContent := footer["content"].([]any)
 	textNode := footerContent[0].(map[string]any)
-	if got := textNode["text"].(string); got != "triage-bot | v:3 | desc:abc123def456" {
-		t.Errorf("footer text = %q, want %q", got, "triage-bot | v:3 | desc:abc123def456")
+	if got := textNode["text"].(string); got != "triage-bot | v:6 | desc:abc123def456" {
+		t.Errorf("footer text = %q, want %q", got, "triage-bot | v:6 | desc:abc123def456")
 	}
 }
 
@@ -287,8 +287,8 @@ func TestExtractVersion(t *testing.T) {
 	}{
 		{
 			name: "new format",
-			body: "text\n---\n_triage-bot | v:3 | desc:abc123def456_\n",
-			want: "3",
+			body: "text\n---\n_triage-bot | v:6 | desc:abc123def456_\n",
+			want: "6",
 		},
 		{
 			name: "legacy format (no version)",
@@ -325,7 +325,7 @@ func TestExtractHash_NewFormat(t *testing.T) {
 	}{
 		{
 			name: "new format with version",
-			body: "text\n---\n_triage-bot | v:3 | desc:abc123def456_\n",
+			body: "text\n---\n_triage-bot | v:6 | desc:abc123def456_\n",
 			want: "abc123def456",
 		},
 		{
@@ -344,6 +344,77 @@ func TestExtractHash_NewFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatMetadataHeader(t *testing.T) {
+	likelihood := 83
+
+	tests := []struct {
+		name string
+		key  string
+		meta *Metadata
+		want string
+	}{
+		{
+			name: "nil metadata",
+			key:  "PROJ-123",
+			meta: nil,
+			want: "# PROJ-123 Triage Assessment\n\n",
+		},
+		{
+			name: "AUTO_FIX with likelihood",
+			key:  "OSAC-456",
+			meta: &Metadata{
+				Recommendation:    "AUTO_FIX",
+				Confidence:        "High",
+				AutoFixLikelihood: &likelihood,
+			},
+			want: "# OSAC-456 Triage Assessment\n\n- **Recommendation**: AUTO_FIX\n- **Auto-Fix Likelihood**: 83\n\n---\n\n",
+		},
+		{
+			name: "non-AUTO_FIX shows recommendation only",
+			key:  "PROJ-789",
+			meta: &Metadata{
+				Recommendation: "BACKLOG",
+				Confidence:     "Medium",
+			},
+			want: "# PROJ-789 Triage Assessment\n\n- **Recommendation**: BACKLOG\n\n---\n\n",
+		},
+		{
+			name: "AUTO_FIX with zero likelihood",
+			key:  "PROJ-100",
+			meta: &Metadata{
+				Recommendation:    "AUTO_FIX",
+				AutoFixLikelihood: intPtr(0),
+			},
+			want: "# PROJ-100 Triage Assessment\n\n- **Recommendation**: AUTO_FIX\n- **Auto-Fix Likelihood**: 0\n\n---\n\n",
+		},
+		{
+			name: "AUTO_FIX with nil likelihood omits likelihood line",
+			key:  "PROJ-200",
+			meta: &Metadata{
+				Recommendation: "AUTO_FIX",
+			},
+			want: "# PROJ-200 Triage Assessment\n\n- **Recommendation**: AUTO_FIX\n\n---\n\n",
+		},
+		{
+			name: "empty recommendation treated as no metadata",
+			key:  "PROJ-300",
+			meta: &Metadata{},
+			want: "# PROJ-300 Triage Assessment\n\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatMetadataHeader(tt.key, tt.meta)
+			if got != tt.want {
+				t.Errorf("formatMetadataHeader() =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int { return &v }
 
 func TestDetermineAction_VersionMismatch(t *testing.T) {
 	tests := []struct {

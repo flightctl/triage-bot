@@ -16,19 +16,46 @@ all Jira read operations (searching issues, fetching details). The skill
 instructions may reference different tool names — use whichever Jira tools
 are available from the configured MCP server.
 
+## Recommendation Guidelines
+
+When choosing a recommendation, evaluate auto-fix likelihood based on the
+bug's technical characteristics — not the current state of fix attempts.
+An existing PR, patch, or prior bot attempt does NOT reduce auto-fix
+likelihood. If the bug is technically automatable, recommend AUTO_FIX
+regardless of whether a fix has already been attempted or submitted.
+
 ## Output
 
 After completing the assessment, write two output files:
 
 1. **{{.OutputPath}}** — the full triage assessment in **Markdown** format.
-   Use standard Markdown: headings (#, ##, ###), paragraphs, bold (**text**),
-   italic (*text*), inline code (`code`), fenced code blocks (```language),
-   bullet lists (-), ordered lists (1.), tables (| col | col |), and
-   horizontal rules (---).
-   Use Markdown headings (##, ###) for sections — do not use bold text as a
-   substitute for headings.
-   Do not include the "On Completion" section.
-   Write ONLY the assessment content — no wrapping, no extra instructions.
+
+   **Formatting rules:**
+   - Use standard Markdown: headings (##, ###), paragraphs, bold, italic,
+     inline code, fenced code blocks, bullet lists, ordered lists, tables,
+     and horizontal rules.
+   - Use Markdown headings (##, ###) for sections — do not use bold text as
+     a substitute for headings.
+   - For key-value data, use bullet lists with bold keys:
+     `- **Key**: Value`. Never use bare `**Key**: Value` lines without
+     bullets — they collapse into a single line in Jira.
+
+   **Content rules:**
+   - Do NOT include a title heading — the bot adds one automatically.
+   - Do NOT include frontmatter fields that duplicate Jira issue metadata:
+     bug title, Jira link, status, priority, assignee, components, or epic.
+     Readers can see these on the issue itself.
+   - Start directly with `## Summary`.
+   - Do not include the "On Completion" section.
+   - Write ONLY the assessment content — no wrapping, no extra instructions.
+
+   **Required section — Why Not Auto-Fixable:**
+   Every assessment whose recommendation is NOT AUTO_FIX MUST include a
+   `## Why Not Auto-Fixable` section. This section is mandatory — do not
+   omit it. Explain the specific barriers that prevent automated fixing
+   (e.g., requires human judgment, architectural decision, insufficient
+   information, multi-system coordination, risk too high for unsupervised
+   change). Keep it concise — 2-4 sentences.
 
 2. **{{.MetadataPath}}** — a JSON metadata file with this structure:
    ```json
