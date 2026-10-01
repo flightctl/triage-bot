@@ -1,0 +1,38 @@
+# See all ../shared-values.yaml
+# If you want to customize something from that file, please move it here
+# don't change it there.
+#
+# Flight Control consumer: EDM project triage/autofix coverage.
+# The label taxonomy must stay aligned with the org-pulse-data project
+# profile (config/projects/flightctl.json, jira-derived source) so the
+# bot's labels and the dashboard's autofix classification match.
+config:
+  dry_run: false
+
+  jira:
+    # Replace with the Flight Control automation account before deploying.
+    username: "<flightctl-automation-account>"
+    bot_username: "<flightctl-automation-account>"
+    project_keys:
+      - EDM
+    excluded_components: []
+
+  ai:
+    claude:
+      vertex_project_id: "itpc-gcp-eco-eng-claude"
+
+  source:
+    projects:
+      EDM:
+        root_repo: https://github.com/flightctl/flightctl
+        repos:
+          - name: flightctl
+            url: https://github.com/flightctl/flightctl
+
+  triage:
+    auto_fix_label: "jira-autofix"
+    missing_info_label: "jira-triage-missing-info"
+    not_fixable_label: "jira-triage-not-fixable"
+    stale_label: "jira-triage-stale"
+    stale_days: 14
+    stale_status: "New"
